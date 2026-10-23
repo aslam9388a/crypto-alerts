@@ -1,12 +1,10 @@
 import os
 import requests
 import pandas as pd
-import pandas_ta as ta
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# GitHub Secrets se credentials load karna
 DISCORD_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 GMAIL_USER = os.environ.get("GMAIL_USER")
 GMAIL_PASS = os.environ.get("GMAIL_APP_PASS")
@@ -14,7 +12,10 @@ GMAIL_PASS = os.environ.get("GMAIL_APP_PASS")
 def send_discord_alert(message):
     if DISCORD_URL:
         payload = {"content": message}
-        requests.post(DISCORD_URL, json=payload)
+        try:
+            requests.post(DISCORD_URL, json=payload)
+        except Exception as e:
+            print(f"Discord alert error: {e}")
 
 def send_email_alert(subject, body):
     if GMAIL_USER and GMAIL_PASS:
@@ -32,8 +33,14 @@ def send_email_alert(subject, body):
         except Exception as e:
             print(f"Email error: {e}")
 
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
 def check_rsi():
-    # MEXC Public API se BTC/USDT 5m K-line data
     api_url = "https://api.mexc.com/api/v3/klines?symbol=BTCUSDT&interval=5m&limit=100"
     try:
         response = requests.get(api_url)
@@ -42,14 +49,12 @@ def check_rsi():
             df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'close_time', 'quote_asset_volume', 'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'])
             df['close'] = df['close'].astype(float)
             
-            # RSI Indicator (Period: 14)
-            df['rsi'] = ta.rsi(df['close'], length=14)
+            df['rsi'] = calculate_rsi(df['close'], period=14)
             latest_rsi = df['rsi'].iloc[-1]
             
             msg = f"📊 MEXC BTC/USDT Current RSI (5m): {latest_rsi:.2f}"
             print(msg)
             
-            # RSI Condition Verification
             if latest_rsi < 30:
                 alert_msg = f"🚨 OVERSOLD ALERT! BTC/USDT RSI is {latest_rsi:.2f} (Below 30)"
                 send_discord_alert(alert_msg)
