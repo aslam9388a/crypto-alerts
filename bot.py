@@ -68,8 +68,19 @@ def calculate_rsi(closes, period=14):
 
     return rsi
 
-# --- RSI PATTERN DETECTION LOGIC ---
-def detect_rsi_patterns(closes, highs, lows, rsi):
+# --- PIVOT FINDER FOR CHART PATTERNS ---
+def find_pivots(arr, order=3):
+    peaks = []
+    troughs = []
+    for i in range(order, len(arr) - order):
+        if arr[i] == np.max(arr[i - order:i + order + 1]):
+            peaks.append((i, arr[i]))
+        if arr[i] == np.min(arr[i - order:i + order + 1]):
+            troughs.append((i, arr[i]))
+    return peaks, troughs
+
+# --- COMBINED RSI & CHART PATTERN DETECTION LOGIC ---
+def detect_patterns(closes, highs, lows, rsi):
     if len(rsi) < 30:
         return None, None
 
@@ -77,48 +88,60 @@ def detect_rsi_patterns(closes, highs, lows, rsi):
     is_oversold = curr_rsi < 30 or np.min(rsi[-5:]) < 30
     is_overbought = curr_rsi > 70 or np.max(rsi[-5:]) > 70
 
-    if not (is_oversold or is_overbought):
-        return None, None
-
     bullish_pattern = None
     bearish_pattern = None
 
-    # 1. Failure Swings
-    if is_oversold and rsi[-3] < 30 and rsi[-2] > 30 and rsi[-1] > rsi[-2]:
-        bullish_pattern = "Bullish Bottom Failure"
-    if is_overbought and rsi[-3] > 70 and rsi[-2] < 70 and rsi[-1] < rsi[-2]:
-        bearish_pattern = "Bearish Top Failure"
+    peaks, troughs = find_pivots(closes, order=3)
 
-    # 2. Divergences
-    if is_oversold:
-        if closes[-1] < closes[-5] and rsi[-1] > rsi[-5]:
-            bullish_pattern = "Regular Bullish Div"
-        elif closes[-1] > closes[-5] and rsi[-1] < rsi[-5]:
-            bullish_pattern = "Hidden Bullish Div"
+    # 1. Chart Patterns: Double / Triple Tops & Bottoms (W & M Shapes)
+    if len(troughs) >= 2 and is_oversold:
+        t1, t2 = troughs[-2][1], troughs[-1][1]
+        if abs(t1 - t2) / t1 < 0.015:
+            if len(troughs) >= 3 and abs(troughs[-3][1] - t1) / t1 < 0.015:
+                bullish_pattern = "Triple Bottom"
+            else:
+                bullish_pattern = "Double Bottom (W-Shape)"
 
-    if is_overbought:
-        if closes[-1] > closes[-5] and rsi[-1] < rsi[-5]:
-            bearish_pattern = "Regular Bearish Div"
-        elif closes[-1] < closes[-5] and rsi[-1] > rsi[-5]:
-            bearish_pattern = "Hidden Bearish Div"
+    if len(peaks) >= 2 and is_overbought:
+        p1, p2 = peaks[-2][1], peaks[-1][1]
+        if abs(p1 - p2) / p1 < 0.015:
+            if len(peaks) >= 3 and abs(peaks[-3][1] - p1) / p1 < 0.015:
+                bearish_pattern = "Triple Top"
+            else:
+                bearish_pattern = "Double Top (M-Shape)"
 
-    # 3. Double Bottom / Top (W / M Shapes)
-    if is_oversold and not bullish_pattern:
-        if abs(rsi[-5] - rsi[-1]) < 3 and rsi[-3] > rsi[-5]:
-            bullish_pattern = "Double Bottom (W-Shape)"
-
-    if is_overbought and not bearish_pattern:
-        if abs(rsi[-5] - rsi[-1]) < 3 and rsi[-3] < rsi[-5]:
-            bearish_pattern = "Double Top (M-Shape)"
-
-    # 4. Head & Shoulders
-    if is_overbought and not bearish_pattern:
-        if rsi[-5] < rsi[-3] and rsi[-1] < rsi[-3]:
+    # 2. Chart Patterns: Head & Shoulders / Inverse H&S
+    if len(peaks) >= 3 and is_overbought:
+        left_h, head, right_h = peaks[-3][1], peaks[-2][1], peaks[-1][1]
+        if head > left_h and head > right_h and abs(left_h - right_h) / left_h < 0.03:
             bearish_pattern = "Head & Shoulders"
 
-    if is_oversold and not bullish_pattern:
-        if rsi[-5] > rsi[-3] and rsi[-1] > rsi[-3]:
+    if len(troughs) >= 3 and is_oversold:
+        left_t, head_t, right_t = troughs[-3][1], troughs[-2][1], troughs[-1][1]
+        if head_t < left_t and head_t < right_t and abs(left_t - right_t) / left_t < 0.03:
             bullish_pattern = "Inverse Head & Shoulders"
+
+    # 3. Chart Patterns: Rising & Falling Wedges
+    if len(peaks) >= 2 and len(troughs) >= 2:
+        p_slope = peaks[-1][1] - peaks[-2][1]
+        t_slope = troughs[-1][1] - troughs[-2][1]
+        if p_slope > 0 and t_slope > 0 and t_slope > p_slope: # Converging upwards
+            bearish_pattern = "Rising Wedge"
+        elif p_slope < 0 and t_slope < 0 and abs(p_slope) > abs(t_slope): # Converging downwards
+            bullish_pattern = "Falling Wedge"
+
+    # 4. RSI Divergences & Failure Swings (Fallback / Additional Trigger)
+    if not bullish_pattern and is_oversold:
+        if closes[-1] < closes[-5] and rsi[-1] > rsi[-5]:
+            bullish_pattern = "Regular Bullish Div"
+        elif rsi[-3] < 30 and rsi[-2] > 30 and rsi[-1] > rsi[-2]:
+            bullish_pattern = "Bullish Bottom Failure"
+
+    if not bearish_pattern and is_overbought:
+        if closes[-1] > closes[-5] and rsi[-1] < rsi[-5]:
+            bearish_pattern = "Regular Bearish Div"
+        elif rsi[-3] > 70 and rsi[-2] < 70 and rsi[-1] < rsi[-2]:
+            bearish_pattern = "Bearish Top Failure"
 
     return bullish_pattern, bearish_pattern
 
@@ -126,7 +149,6 @@ def detect_rsi_patterns(closes, highs, lows, rsi):
 def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, file_path="chart.png"):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7), gridspec_kw={'height_ratios': [2, 1]})
     
-    # Draw Candlesticks on Price Panel
     x = np.arange(len(closes[-30:]))
     o = opens[-30:]
     c = closes[-30:]
@@ -138,12 +160,11 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, file_path=
         ax1.plot([val, val], [l[idx], h[idx]], color=color, linewidth=1)
         ax1.bar(val, abs(c[idx] - o[idx]), bottom=min(o[idx], c[idx]), color=color, width=0.6)
 
-    ax1.set_title(f"{symbol} ({tf}) - Real Candles & RSI Pattern", color='white', fontsize=12, fontweight='bold')
+    ax1.set_title(f"{symbol} ({tf}) - Candles & RSI Pattern", color='white', fontsize=12, fontweight='bold')
     ax1.set_facecolor('#131722')
     ax1.tick_params(colors='white')
     ax1.grid(True, color='#2a2e39', alpha=0.5)
 
-    # Draw RSI Line Panel
     ax2.plot(x, rsi[-30:], color='#2962ff', linewidth=2, label="RSI(14)")
     ax2.axhline(70, color='#ef5350', linestyle='--', alpha=0.7)
     ax2.axhline(30, color='#26a69a', linestyle='--', alpha=0.7)
@@ -162,7 +183,7 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, file_path=
 
 # --- ALERT SENDERS ---
 def send_discord_alert(symbol, alert_table_text, image_path):
-    msg = f"🚨 **RSI PATTERN ALERT DETECTED** 🚨\nSymbol: `{symbol}` (MEXC Futures)\n\n```\n{alert_table_text}\n```"
+    msg = f"🚨 **TEXT DETAILS ALERT** 🚨\nSymbol: `{symbol}` (MEXC Futures)\n\n```\n{alert_table_text}\n```"
     if DISCORD_WEBHOOK_URL:
         try:
             with open(image_path, 'rb') as f:
@@ -176,9 +197,9 @@ def send_gmail_alert(symbol, alert_table_text):
             msg = MIMEMultipart()
             msg['From'] = SENDER_EMAIL
             msg['To'] = RECEIVER_EMAIL
-            msg['Subject'] = f"🚨 MEXC Alert: RSI Pattern Detected on {symbol}"
+            msg['Subject'] = f"🚨 MEXC Alert: Pattern Detected on {symbol}"
             
-            body = f"RSI PATTERN ALERT DETECTED\nSymbol: {symbol} (MEXC Futures)\n\n{alert_table_text}"
+            body = f"TEXT DETAILS ALERT\nSymbol: {symbol} (MEXC Futures)\n\n{alert_table_text}"
             msg.attach(MIMEText(body, 'plain'))
 
             server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -188,11 +209,11 @@ def send_gmail_alert(symbol, alert_table_text):
             server.quit()
             print(f"Gmail alert sent successfully for {symbol}!")
         except Exception as e:
-            print(f"Gmail Alert Error (Check App Password): {e}")
+            print(f"Gmail Alert Error: {e}")
 
 # --- MAIN EXECUTION ---
 def main():
-    # Karachi Time (UTC+5)
+    # Karachi Time (UTC+5) with dd.mm.yy date format
     karachi_tz = timezone(timedelta(hours=5))
     now_karachi = datetime.now(karachi_tz)
     current_time_str = now_karachi.strftime("%H:%M")
@@ -213,7 +234,7 @@ def main():
                 continue
 
             rsi = calculate_rsi(closes)
-            bull_pat, bear_pat = detect_rsi_patterns(closes, highs, lows, rsi)
+            bull_pat, bear_pat = detect_patterns(closes, highs, lows, rsi)
 
             if bull_pat or bear_pat:
                 has_any_pattern = True
@@ -222,7 +243,7 @@ def main():
             tf_results[tf] = (bull_pat if bull_pat else "-", bear_pat if bear_pat else "-")
 
         if has_any_pattern:
-            # Build Text Details Alert Table matching your exact layout
+            # Build Text Details Alert Table strictly matching your layout
             table_lines = [
                 "                                  Text Details Alert                                  ",
                 "--------------------------------------------------------------------------------------",
@@ -237,7 +258,6 @@ def main():
                     table_lines.append(f"{tf:<7} {current_time_str:<8} {current_date_str:<11} {bull:<28} {bear:<20}")
                     first_row = False
                 else:
-                    # Other timeframes show empty time/date if no active pattern trigger on this check, or keep clean
                     t_val = current_time_str if (bull != "-" or bear != "-") else ""
                     d_val = current_date_str if (bull != "-" or bear != "-") else ""
                     table_lines.append(f"{tf:<7} {t_val:<8} {d_val:<11} {bull:<28} {bear:<20}")
@@ -245,7 +265,7 @@ def main():
             table_lines.append("--------------------------------------------------------------------------------------")
             alert_text_table = "\n".join(table_lines)
 
-            # Generate Real Chart Image with Candles and RSI
+            # Generate Chart Image for Discord
             chart_file = "alert_chart.png"
             generate_chart_image(symbol, sample_tf, sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, chart_file)
 
