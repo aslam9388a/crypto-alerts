@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import smtplib
+from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
@@ -26,11 +27,10 @@ def get_mexc_futures_symbols():
             return [item["symbol"] for item in res["data"] if item["symbol"].endswith("_USDT")]
     except Exception as e:
         print(f"Error fetching symbols: {e}")
-    return ["BTC_USDT", "ETH_USDT", "SOL_USDT"]  # Fallback
+    return ["BTC_USDT", "ETH_USDT", "SOL_USDT"]
 
 def get_klines(symbol, interval, limit=100):
     url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}"
-    # Map timeframes to MEXC Futures API interval format
     tf_map = {'1m': 'Min1', '5m': 'Min5', '15m': 'Min15', '30m': 'Min30', '1h': 'Min60', '4h': 'Hour4', '1d': 'Day1'}
     params = {'interval': tf_map.get(interval, 'Min5')}
     try:
@@ -58,12 +58,8 @@ def calculate_rsi(closes, period=14):
 
     for i in range(period, len(closes)):
         delta = deltas[i - 1]
-        if delta > 0:
-            upval = delta
-            downval = 0.
-        else:
-            upval = 0.
-            downval = -delta
+        upval = delta if delta > 0 else 0.
+        downval = -delta if delta < 0 else 0.
 
         up = (up * (period - 1) + upval) / period
         down = (down * (period - 1) + downval) / period
@@ -78,9 +74,6 @@ def detect_rsi_patterns(closes, highs, lows, rsi):
         return None, None
 
     curr_rsi = rsi[-1]
-    prev_rsi = rsi[-2]
-    
-    # Overbought / Oversold check
     is_oversold = curr_rsi < 30 or np.min(rsi[-5:]) < 30
     is_overbought = curr_rsi > 70 or np.max(rsi[-5:]) > 70
 
@@ -129,26 +122,42 @@ def detect_rsi_patterns(closes, highs, lows, rsi):
 
     return bullish_pattern, bearish_pattern
 
-# --- PLOT CHART FOR DISCORD ---
-def generate_chart_image(symbol, tf, closes, rsi, file_path="chart.png"):
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6), gridspec_kw={'height_ratios': [2, 1]})
+# --- PLOT REAL CHART IMAGE WITH CANDLES & RSI ---
+def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, file_path="chart.png"):
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7), gridspec_kw={'height_ratios': [2, 1]})
     
-    ax1.plot(closes[-30:], color='#00F0FF', linewidth=2, label="Price")
-    ax1.set_title(f"{symbol} ({tf}) - Price Chart", color='white')
+    # Draw Candlesticks on Price Panel
+    x = np.arange(len(closes[-30:]))
+    o = opens[-30:]
+    c = closes[-30:]
+    h = highs[-30:]
+    l = lows[-30:]
+    
+    for idx, val in enumerate(x):
+        color = '#26a69a' if c[idx] >= o[idx] else '#ef5350'
+        ax1.plot([val, val], [l[idx], h[idx]], color=color, linewidth=1)
+        ax1.bar(val, abs(c[idx] - o[idx]), bottom=min(o[idx], c[idx]), color=color, width=0.6)
+
+    ax1.set_title(f"{symbol} ({tf}) - Real Candles & RSI Pattern", color='white', fontsize=12, fontweight='bold')
     ax1.set_facecolor('#131722')
     ax1.tick_params(colors='white')
-    ax1.grid(True, color='#2A2E39')
+    ax1.grid(True, color='#2a2e39', alpha=0.5)
 
-    ax2.plot(rsi[-30:], color='#FF007F', linewidth=2, label="RSI(14)")
-    ax2.axhline(70, color='red', linestyle='--', alpha=0.7)
-    ax2.axhline(30, color='green', linestyle='--', alpha=0.7)
+    # Draw RSI Line Panel
+    ax2.plot(x, rsi[-30:], color='#2962ff', linewidth=2, label="RSI(14)")
+    ax2.axhline(70, color='#ef5350', linestyle='--', alpha=0.7)
+    ax2.axhline(30, color='#26a69a', linestyle='--', alpha=0.7)
+    ax2.fill_between(x, rsi[-30:], 70, where=(rsi[-30:] >= 70), color='#ef5350', alpha=0.2)
+    ax2.fill_between(x, rsi[-30:], 30, where=(rsi[-30:] <= 30), color='#26a69a', alpha=0.2)
+    
     ax2.set_facecolor('#131722')
     ax2.tick_params(colors='white')
-    ax2.grid(True, color='#2A2E39')
+    ax2.grid(True, color='#2a2e39', alpha=0.5)
+    ax2.legend(loc="upper left", facecolor='#131722', labelcolor='white')
 
     fig.patch.set_facecolor('#131722')
     plt.tight_layout()
-    plt.savefig(file_path, facecolor=fig.get_facecolor(), edgecolor='none')
+    plt.savefig(file_path, facecolor=fig.get_facecolor(), edgecolor='none', dpi=150)
     plt.close()
 
 # --- ALERT SENDERS ---
@@ -177,18 +186,25 @@ def send_gmail_alert(symbol, alert_table_text):
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
             server.quit()
+            print(f"Gmail alert sent successfully for {symbol}!")
         except Exception as e:
-            print(f"Gmail Alert Error: {e}")
+            print(f"Gmail Alert Error (Check App Password): {e}")
 
 # --- MAIN EXECUTION ---
 def main():
+    # Karachi Time (UTC+5)
+    karachi_tz = timezone(timedelta(hours=5))
+    now_karachi = datetime.now(karachi_tz)
+    current_time_str = now_karachi.strftime("%H:%M")
+    current_date_str = now_karachi.strftime("%d.%m.%y")
+
     symbols = get_mexc_futures_symbols()
     print(f"Scanning {len(symbols)} MEXC Futures Symbols...")
 
     for symbol in symbols:
         tf_results = {}
         has_any_pattern = False
-        sample_closes, sample_rsi, sample_tf = None, None, None
+        sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, sample_tf = None, None, None, None, None, None
 
         for tf in TIMEFRAMES:
             opens, highs, lows, closes = get_klines(symbol, tf)
@@ -201,27 +217,37 @@ def main():
 
             if bull_pat or bear_pat:
                 has_any_pattern = True
-                sample_closes, sample_rsi, sample_tf = closes, rsi, tf
+                sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, sample_tf = closes, opens, highs, lows, rsi, tf
 
             tf_results[tf] = (bull_pat if bull_pat else "-", bear_pat if bear_pat else "-")
 
         if has_any_pattern:
-            # Build Text Details Alert Table
+            # Build Text Details Alert Table matching your exact layout
             table_lines = [
-                "                   Text Details Alert                    ",
-                "---------------------------------------------------------",
-                f"{'Timeframe':<13} {'Bullish Pattern Name':<23} {'Bearish Pattern Name':<20}"
+                "                                  Text Details Alert                                  ",
+                "--------------------------------------------------------------------------------------",
+                f"{'T.F':<7} {'Time':<8} {'Date':<11} {'Bulish Pattern Name':<28} {'Bearish Pattern name':<20}",
+                "--------------------------------------------------------------------------------------"
             ]
+            
+            first_row = True
             for tf in TIMEFRAMES:
                 bull, bear = tf_results[tf]
-                table_lines.append(f"{tf:<13} {bull:<23} {bear:<20}")
+                if first_row and (bull != "-" or bear != "-"):
+                    table_lines.append(f"{tf:<7} {current_time_str:<8} {current_date_str:<11} {bull:<28} {bear:<20}")
+                    first_row = False
+                else:
+                    # Other timeframes show empty time/date if no active pattern trigger on this check, or keep clean
+                    t_val = current_time_str if (bull != "-" or bear != "-") else ""
+                    d_val = current_date_str if (bull != "-" or bear != "-") else ""
+                    table_lines.append(f"{tf:<7} {t_val:<8} {d_val:<11} {bull:<28} {bear:<20}")
             
-            table_lines.append("---------------------------------------------------------")
+            table_lines.append("--------------------------------------------------------------------------------------")
             alert_text_table = "\n".join(table_lines)
 
-            # Generate Chart Image for Discord
+            # Generate Real Chart Image with Candles and RSI
             chart_file = "alert_chart.png"
-            generate_chart_image(symbol, sample_tf, sample_closes, sample_rsi, chart_file)
+            generate_chart_image(symbol, sample_tf, sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, chart_file)
 
             # Send Alerts
             send_discord_alert(symbol, alert_text_table, chart_file)
