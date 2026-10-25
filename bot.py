@@ -82,7 +82,7 @@ def find_pivots(arr, order=3):
 # --- STRICT REAL PATTERN DETECTION ---
 def detect_patterns_with_time(closes, highs, lows, rsi, times):
     if len(rsi) < 35:
-        return None, None, None, False
+        return None, None, ("", ""), False
 
     karachi_tz = timezone(timedelta(hours=5))
     last_idx = len(closes) - 1
@@ -91,7 +91,7 @@ def detect_patterns_with_time(closes, highs, lows, rsi, times):
     is_overbought = rsi[-1] > 70 or np.any(rsi[-3:] > 70)
 
     if not (is_oversold or is_overbought):
-        return None, None, "", False
+        return None, None, ("", ""), False
 
     bullish_pattern = None
     bearish_pattern = None
@@ -99,7 +99,7 @@ def detect_patterns_with_time(closes, highs, lows, rsi, times):
 
     peaks, troughs = find_pivots(closes, order=3)
     if not peaks and not troughs:
-        return None, None, "", False
+        return None, None, ("", ""), False
 
     if is_oversold and troughs:
         if len(troughs) >= 2:
@@ -148,7 +148,7 @@ def detect_patterns_with_time(closes, highs, lows, rsi, times):
                 bearish_pattern = "Rising Wedge"
 
     if not bullish_pattern and not bearish_pattern:
-        return None, None, "", False
+        return None, None, ("", ""), False
 
     pattern_candle_idx = p_idx if p_idx is not None else last_idx
     
@@ -192,8 +192,7 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, alert_tabl
     ax2.grid(True, color='#2a2e39', alpha=0.5)
     ax2.legend(loc="upper left", facecolor='#131722', labelcolor='white')
 
-    # Embed Text Details Alert Table directly at the bottom of the chart image
-    fig.text(0.05, 0.02, alert_text_text, family='monospace', fontsize=8, color='white', 
+    fig.text(0.05, 0.02, alert_table_text, family='monospace', fontsize=8, color='white', 
              bbox=dict(boxstyle='round', facecolor='#1e222d', edgecolor='#2a2e39'))
 
     fig.patch.set_facecolor('#131722')
@@ -278,11 +277,9 @@ def main():
             table_lines.append("--------------------------------------------------------------------------------------")
             alert_text_table = "\n".join(table_lines)
 
-            # Generate Chart Image with embedded table at the bottom
             chart_file = "alert_chart.png"
             generate_chart_image(symbol, sample_tf, sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, alert_text_table, chart_file)
 
-            # Send Alerts (Discord gets image with table inside, Gmail gets text table)
             send_discord_alert(symbol, chart_file)
             send_gmail_alert(symbol, alert_text_table)
             print(f"Alert Sent for {symbol}!")
