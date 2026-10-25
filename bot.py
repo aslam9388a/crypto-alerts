@@ -40,7 +40,7 @@ def get_klines(symbol, interval, limit=100):
             highs = np.array(data["high"], dtype=float)
             lows = np.array(data["low"], dtype=float)
             opens = np.array(data["open"], dtype=float)
-            times = np.array(data["time"], dtype=int)  # Epoch timestamps
+            times = np.array(data["time"], dtype=int)
             return opens, highs, lows, closes, times
     except Exception as e:
         pass
@@ -79,32 +79,28 @@ def find_pivots(arr, order=3):
             troughs.append((i, arr[i]))
     return peaks, troughs
 
-# --- PATTERN DETECTION WITH PATTERN TIME ---
+# --- STRICT REAL PATTERN DETECTION ---
 def detect_patterns_with_time(closes, highs, lows, rsi, times):
     if len(rsi) < 35:
         return None, None, None, False
 
     karachi_tz = timezone(timedelta(hours=5))
-    
+    last_idx = len(closes) - 1
+
+    is_oversold = rsi[-1] < 30 or np.any(rsi[-3:] < 30)
+    is_overbought = rsi[-1] > 70 or np.any(rsi[-3:] > 70)
+
+    if not (is_oversold or is_overbought):
+        return None, None, "", False
+
     bullish_pattern = None
     bearish_pattern = None
-    pattern_time_str = ""
-    pattern_date_str = ""
-    is_fresh_signal = False
+    p_idx = None
 
     peaks, troughs = find_pivots(closes, order=3)
     if not peaks and not troughs:
         return None, None, "", False
 
-    last_idx = len(closes) - 1
-
-    # Check RSI Zones
-    is_oversold = np.any(rsi[-10:] < 30)
-    is_overbought = np.any(rsi[-10:] > 70)
-
-    p_idx = None
-
-    # 1. Bullish Patterns (Oversold Zone)
     if is_oversold and troughs:
         if len(troughs) >= 2:
             t1, t2 = troughs[-2][1], troughs[-1][1]
@@ -128,7 +124,6 @@ def detect_patterns_with_time(closes, highs, lows, rsi, times):
                 p_idx = troughs[-1][0]
                 bullish_pattern = "Falling Wedge"
 
-    # 2. Bearish Patterns (Overbought Zone)
     if is_overbought and peaks:
         if len(peaks) >= 2:
             p1, p2 = peaks[-2][1], peaks[-1][1]
@@ -152,24 +147,23 @@ def detect_patterns_with_time(closes, highs, lows, rsi, times):
                 p_idx = peaks[-1][0]
                 bearish_pattern = "Rising Wedge"
 
-    if bullish_pattern or bearish_pattern:
-        pattern_candle_idx = p_idx if p_idx is not None else last_idx
-        
-        # Calculate timestamp of pattern formation (UTC+5 Karachi)
-        pattern_ts = times[pattern_candle_idx]
-        dt = datetime.fromtimestamp(pattern_ts, tz=timezone.utc).astimezone(karachi_tz)
-        pattern_time_str = dt.strftime("%H:%M")
-        pattern_date_str = dt.strftime("%d.%m.%y")
+    if not bullish_pattern and not bearish_pattern:
+        return None, None, "", False
 
-        # Check if the signal is FRESH (formed within last 3 candles)
-        if (last_idx - pattern_candle_idx) <= 3:
-            is_fresh_signal = True
+    pattern_candle_idx = p_idx if p_idx is not None else last_idx
+    
+    pattern_ts = times[pattern_candle_idx]
+    dt = datetime.fromtimestamp(pattern_ts, tz=timezone.utc).astimezone(karachi_tz)
+    pattern_time_str = dt.strftime("%H:%M")
+    pattern_date_str = dt.strftime("%d.%m.%y")
+
+    is_fresh_signal = (last_idx - pattern_candle_idx) <= 2
 
     return bullish_pattern, bearish_pattern, (pattern_time_str, pattern_date_str), is_fresh_signal
 
-# --- PLOT REAL CHART IMAGE WITH CANDLES & RSI ---
-def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, file_path="chart.png"):
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 7), gridspec_kw={'height_ratios': [2, 1]})
+# --- PLOT CHART IMAGE WITH EMBEDDED TABLE AT THE BOTTOM ---
+def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, alert_table_text, file_path="chart.png"):
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10), gridspec_kw={'height_ratios': [2, 1]})
     
     x = np.arange(len(closes[-30:]))
     o = opens[-30:]
@@ -182,7 +176,7 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, file_path=
         ax1.plot([val, val], [l[idx], h[idx]], color=color, linewidth=1)
         ax1.bar(val, abs(c[idx] - o[idx]), bottom=min(o[idx], c[idx]), color=color, width=0.6)
 
-    ax1.set_title(f"{symbol} ({tf}) - Real Candles & RSI Pattern", color='white', fontsize=12, fontweight='bold')
+    ax1.set_title(f"{symbol} ({tf}) - Real Current Signal Chart", color='white', fontsize=12, fontweight='bold')
     ax1.set_facecolor('#131722')
     ax1.tick_params(colors='white')
     ax1.grid(True, color='#2a2e39', alpha=0.5)
@@ -198,14 +192,18 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, file_path=
     ax2.grid(True, color='#2a2e39', alpha=0.5)
     ax2.legend(loc="upper left", facecolor='#131722', labelcolor='white')
 
+    # Embed Text Details Alert Table directly at the bottom of the chart image
+    fig.text(0.05, 0.02, alert_text_text, family='monospace', fontsize=8, color='white', 
+             bbox=dict(boxstyle='round', facecolor='#1e222d', edgecolor='#2a2e39'))
+
     fig.patch.set_facecolor('#131722')
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0.18, 1, 1])
     plt.savefig(file_path, facecolor=fig.get_facecolor(), edgecolor='none', dpi=150)
     plt.close()
 
 # --- ALERT SENDERS ---
-def send_discord_alert(symbol, alert_table_text, image_path):
-    msg = f"🚨 **TEXT DETAILS ALERT** 🚨\nSymbol: `{symbol}` (MEXC Futures)\n\n```\n{alert_table_text}\n```"
+def send_discord_alert(symbol, image_path):
+    msg = f"🚨 **MEXC FUTURES SIGNAL ALERT** 🚨\nSymbol: `{symbol}`"
     if DISCORD_WEBHOOK_URL:
         try:
             with open(image_path, 'rb') as f:
@@ -259,14 +257,12 @@ def main():
                     "bull": bull_pat if bull_pat else "-",
                     "bear": bear_pat if bear_pat else "-"
                 }
-                # Check if this scan should trigger a new alert
                 if is_fresh:
                     has_fresh_trigger = True
                     sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, sample_tf = closes, opens, highs, lows, rsi, tf
             else:
                 tf_results[tf] = {"time": "", "date": "", "bull": "-", "bear": "-"}
 
-        # Only trigger alert if a NEW fresh pattern appeared on at least one timeframe
         if has_fresh_trigger:
             table_lines = [
                 "                                  Text Details Alert                                  ",
@@ -282,12 +278,12 @@ def main():
             table_lines.append("--------------------------------------------------------------------------------------")
             alert_text_table = "\n".join(table_lines)
 
-            # Generate Chart Image for Discord
+            # Generate Chart Image with embedded table at the bottom
             chart_file = "alert_chart.png"
-            generate_chart_image(symbol, sample_tf, sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, chart_file)
+            generate_chart_image(symbol, sample_tf, sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, alert_text_table, chart_file)
 
-            # Send Alerts
-            send_discord_alert(symbol, alert_text_table, chart_file)
+            # Send Alerts (Discord gets image with table inside, Gmail gets text table)
+            send_discord_alert(symbol, chart_file)
             send_gmail_alert(symbol, alert_text_table)
             print(f"Alert Sent for {symbol}!")
 
