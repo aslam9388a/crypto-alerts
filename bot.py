@@ -17,16 +17,65 @@ RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
 
 TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
 
-# --- MEXC FUTURES DATA FETCHING ---
+# --- CUSTOM SPECIFIC SYMBOLS LIST ---
 def get_mexc_futures_symbols():
-    url = "https://contract.mexc.com/api/v1/contract/detail"
-    try:
-        res = requests.get(url, timeout=10).json()
-        if res.get("success") and "data" in res:
-            return [item["symbol"] for item in res["data"] if item["symbol"].endswith("_USDT")]
-    except Exception as e:
-        print(f"Error fetching symbols: {e}")
-    return ["BTC_USDT", "ETH_USDT", "SOL_USDT"]
+    # Sirf aapki di gayi categories aur symbols ki list (with _USDT)
+    symbols = [
+        # 1. L1
+        "BTC_USDT", "ETH_USDT", "BNB_USDT", "SOL_USDT", "TRX_USDT", "ZEC_USDT", "HYPE_USDT", "XMR_USDT", "ADA_USDT", "NEAR_USDT",
+        "BCH_USDT", "LTC_USDT", "AVAX_USDT", "SUI_USDT", "GRAM_USDT", "HBAR_USDT", "TAO_USDT", "CRO_USDT", "ICP_USDT", "ETC_USDT",
+        "KAS_USDT", "ALGO_USDT", "FIL_USDT", "INJ_USDT", "APT_USDT", "VET_USDT", "TIA_USDT", "SEI_USDT", "XPL_USDT", "XTZ_USDT",
+        "GNO_USDT", "KITE_USDT", "CFX_USDT", "DCR_USDT", "KAIA_USDT", "AR_USDT", "IOTA_USDT", "THETA_USDT", "XEC_USDT", "KAVA_USDT",
+        "DUSK_USDT", "ZIG_USDT", "DGB_USDT", "ARC_USDT", "VTHO_USDT", "ROSE_USDT", "S_USDT", "CHZ_USDT", "OG_USDT", "PLUME_USDT",
+        "EGLD_USDT", "DYDX_USDT", "GALA_USDT", "ONE_USDT", "BERA_USDT", "ASTR_USDT", "ENJ_USDT", "POLYX_USDT", "SOMI_USDT", "FLOW_USDT",
+        "XNO_USDT", "MOVE_USDT", "PARTI_USDT", "WAXP_USDT", "FOGO_USDT", "CHR_USDT", "G_USDT", "HIVE_USDT", "ONG_USDT", "MANTRA_USDT",
+        "MOVR_USDT", "SAGA_USDT", "SCRT_USDT", "GLMR_USDT", "BB_USDT", "INIT_USDT", "VANA_USDT", "VANRY_USDT", "SYS_USDT", "SAHARA_USDT",
+        "SKL_USDT", "GUN_USDT", "ACA_USDT",
+        
+        # 2. DeFi coins & Tokenized stocks/ETFs ending with B
+        "LINK_USDT", "XLM_USDT", "UNI_USDT", "ENA_USDT", "QNT_USDT", "AAVE_USDT", "PUMP_USDT", "ASTER_USDT", "DOT_USDT", "WLD_USDT",
+        "WLFI_USDT", "SKY_USDT", "JST_USDT", "MORPHO_USDT", "RENDER_USDT", "ATOM_USDT", "AERO_USDT", "ZRO_USDT", "CAKE_USDT", "ETHFI_USDT",
+        "PYTH_USDT", "CRV_USDT", "RAY_USDT", "BTT_USDT", "STRK_USDT", "PENDLE_USDT", "LDO_USDT", "LUNC_USDT", "GRT_USDT", "CVX_USDT",
+        "BAT_USDT", "KMNO_USDT", "COMP_USDT", "JTO_USDT", "FLOKI_USDT", "RUNE_USDT", "EIGEN_USDT", "TRAC_USDT", "MET_USDT", "A_USDT",
+        "NEO_USDT", "DEXE_USDT", "1INCH_USDT", "AWE_USDT", "SUPER_USDT", "ORCA_USDT", "ZEN_USDT", "GENIUS_USDT", "RSR_USDT", "FUN_USDT",
+        "GMX_USDT", "QTUM_USDT", "ZRX_USDT", "HUMA_USDT", "MINA_USDT", "RED_USDT", "W_USDT", "GAS_USDT", "YFI_USDT", "NMR_USDT",
+        "COW_USDT", "SNX_USDT", "BABY_USDT", "TFUEL_USDT", "RE_USDT", "AXL_USDT", "SUSHI_USDT", "WIN_USDT", "SPK_USDT", "NXPC_USDT",
+        "ONT_USDT", "TRB_USDT", "XVS_USDT", "RLC_USDT", "BARD_USDT", "ANKR_USDT", "ZIL_USDT", "REQ_USDT", "AVNT_USDT", "REZ_USDT",
+        "BAND_USDT", "LISTA_USDT", "AT_USDT", "SYN_USDT", "IOTX_USDT", "WAVES_USDT", "RPL_USDT", "UMA_USDT", "ACX_USDT", "LAYER_USDT",
+        "COTI_USDT", "BNT_USDT", "MMT_USDT", "ARKM_USDT", "HYPER_USDT", "CPOOL_USDT", "FLUX_USDT", "KNC_USDT", "EDEN_USDT", "STRAX_USDT",
+        "AUCTION_USDT", "DODO_USDT", "IQ_USDT", "HOME_USDT", "API3_USDT", "ZBT_USDT", "CETUS_USDT", "USUAL_USDT", "OGN_USDT", "WOO_USDT",
+        "CELR_USDT", "LQTY_USDT", "CGPT_USDT", "BANK_USDT", "EPIC_USDT", "CTK_USDT", "FIDA_USDT", "DIA_USDT", "XAI_USDT", "FIRO_USDT",
+        "SPELL_USDT", "QI_USDT", "BICO_USDT", "F_USDT", "ARPA_USDT", "M87_USDT", "C98_USDT", "KERNEL_USDT", "KAT_USDT", "JOE_USDT",
+        "ALICE_USDT", "YB_USDT", "POND_USDT", "PORTAL_USDT", "SXT_USDT", "ICX_USDT", "MAV_USDT", "ERA_USDT", "DOLO_USDT", "HAEDAL_USDT",
+        "GNS_USDT", "HEI_USDT", "BEL_USDT", "ADX_USDT", "RESOLV_USDT", "BAL_USDT", "QUICK_USDT", "HFT_USDT", "FARM_USDT", "MLN_USDT",
+        "PIVX_USDT", "NOM_USDT", "STO_USDT", "THE_USDT", "TREE_USDT", "ALCX_USDT", "ORAI_USDT", "HIGH_USDT", "MITO_USDT", "MBOX_USDT",
+        "BBB_USDT", "PERP_USDT", "FIO_USDT",
+        
+        # Tokenized Stocks/ETFs
+        "SNDKB_USDT", "SOXLB_USDT", "INTCB_USDT", "NVDAB_USDT", "GOOGLB_USDT", "BNCB_USDT", "SKHYB_USDT", "TSLAB_USDT", "MUB_USDT", "CRCLB_USDT",
+        "SPCXB_USDT", "MSTRB_USDT", "QQQB_USDT", "DRAMB_USDT", "COINB_USDT", "AVGOB_USDT", "SPYB_USDT", "KORUB_USDT", "TQQQB_USDT", "NBISB_USDT",
+        "AMDB_USDT", "EWYB_USDT", "BMNRB_USDT", "MUUB_USDT", "TSMB_USDT", "RKLBB_USDT", "AMATB_USDT", "BABAB_USDT", "COHRB_USDT", "MRVLB_USDT",
+        "SNXXB_USDT", "HOODB_USDT", "AAPLB_USDT", "ORCLB_USDT", "LITEB_USDT", "MSFTB_USDT", "BEB_USDT", "NFLXB_USDT", "PDDB_USDT", "MRNAB_USDT",
+        "CRWVB_USDT", "SOXSB_USDT", "ASTSB_USDT", "ARMB_USDT", "GLWB_USDT", "SMHB_USDT", "USARB_USDT", "DELLB_USDT", "ADBEB_USDT", "PYPLB_USDT",
+        "IBMB_USDT", "GSB_USDT", "FLNCB_USDT", "CYPHB_USDT", "LLYB_USDT", "QNTB_USDT", "AMCB_USDT", "STXB_USDT", "ALABB_USDT", "CRDOB_USDT",
+        "SHAZB_USDT", "FWDIB_USDT", "GPROB_USDT", "PENGB_USDT", "WENB_USDT", "VSTB_USDT", "TMFB_USDT", "ZMB_USDT", "MDBB_USDT", "BOTB_USDT",
+        "JPMB_USDT", "DJTB_USDT", "ASMLB_USDT", "WDCB_USDT", "NOKB_USDT", "PLTRB_USDT", "QCOMB_USDT", "SMCIB_USDT", "GMEB_USDT", "METAB_USDT",
+        "IRENB_USDT", "AMZNB_USDT", "CRWDB_USDT", "HIMSB_USDT", "SQQQB_USDT", "CRMB_USDT",
+
+        # 3. DEx, 4. AI, 5. Metaverse, 6. Meme, 7. RWA, 8. Privacy additional items
+        "HOT_USDT", "BANANA_USDT", "LRC_USDT", "FET_USDT", "VIRTUAL_USDT", "SENT_USDT", "GLM_USDT", "CHIP_USDT", "IO_USDT", "KAITO_USDT",
+        "TURBO_USDT", "AI_USDT", "HOLO_USDT", "NIL_USDT", "PHA_USDT", "C_USDT", "ALLO_USDT", "ARK_USDT", "OPEN_USDT", "LUNA_USDT",
+        "MAGIC_USDT", "OPG_USDT", "BMT_USDT", "AIXBT_USDT", "MIRA_USDT", "NEWT_USDT", "SAPIEN_USDT", "ROBO_USDT", "SHELL_USDT", "SAGA_USDT",
+        "ACT_USDT", "PAAL_USDT", "COOKIE_USDT", "LNQ_USDT", "HASHAI_USDT", "HOOK_USDT", "GPU_USDT", "STX_USDT", "AXS_USDT", "MANA_USDT",
+        "SAND_USDT", "APE_USDT", "MEGA_USDT", "MASK_USDT", "AVA_USDT", "RIO_USDT", "ILV_USDT", "TLM_USDT", "REEF_USDT", "YGG_USDT",
+        "GHST_USDT", "PYR_USDT", "D_USDT", "DOGE_USDT", "SHIB_USDT", "PEPE_USDT", "BONK_USDT", "PENGU_USDT", "TRUMP_USDT", "SPX_USDT",
+        "TIBBIR_USDT", "USELESS_USDT", "WIF_USDT", "NPC_USDT", "MUBARAK_USDT", "BOME_USDT", "PNUT_USDT", "PEOPLE_USDT", "FARTCOIN_USDT",
+        "MARSCOIN_USDT", "BANANAS31_USDT", "MOODENG_USDT", "NOT_USDT", "MEME_USDT", "GIGGLE_USDT", "NEIRO_USDT", "DOGS_USDT", "TUT_USDT",
+        "TST_USDT", "CHILLGUY_USDT", "ONDO_USDT", "CFG_USDT", "ID_USDT", "LSK_USDT", "RVN_USDT", "LUMIA_USDT", "PROPC_USDT", "DASH_USDT",
+        "XVG_USDT", "ZKP_USDT", "ANYONE_USDT"
+    ]
+    # Duplicates remove karne ke liye set use kar ke wapas list bana lein
+    return list(dict.fromkeys(symbols))
 
 def get_klines(symbol, interval, limit=100):
     url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}"
@@ -233,7 +282,7 @@ def send_gmail_alert(symbol, alert_table_text):
 # --- MAIN EXECUTION ---
 def main():
     symbols = get_mexc_futures_symbols()
-    print(f"Scanning {len(symbols)} MEXC Futures Symbols...")
+    print(f"Scanning {len(symbols)} selected MEXC Futures Symbols...")
 
     for symbol in symbols:
         tf_results = {}
