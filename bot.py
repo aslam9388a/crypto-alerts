@@ -9,17 +9,16 @@ from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (Matched with your GitHub Secrets) ---
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
-SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
-RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
+SENDER_EMAIL = os.getenv("GMAIL_USER")       # GMAIL_USER mapped to SENDER_EMAIL
+SENDER_PASSWORD = os.getenv("GMAIL_APP_PASS") # GMAIL_APP_PASS mapped to SENDER_PASSWORD
+RECEIVER_EMAIL = os.getenv("GMAIL_USER")      # Send to yourself or set receiver
 
 TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
 
 # --- CUSTOM SPECIFIC SYMBOLS LIST ---
 def get_mexc_futures_symbols():
-    # Sirf aapki di gayi categories aur symbols ki list (with _USDT)
     symbols = [
         # 1. L1
         "BTC_USDT", "ETH_USDT", "BNB_USDT", "SOL_USDT", "TRX_USDT", "ZEC_USDT", "HYPE_USDT", "XMR_USDT", "ADA_USDT", "NEAR_USDT",
@@ -62,7 +61,7 @@ def get_mexc_futures_symbols():
         "JPMB_USDT", "DJTB_USDT", "ASMLB_USDT", "WDCB_USDT", "NOKB_USDT", "PLTRB_USDT", "QCOMB_USDT", "SMCIB_USDT", "GMEB_USDT", "METAB_USDT",
         "IRENB_USDT", "AMZNB_USDT", "CRWDB_USDT", "HIMSB_USDT", "SQQQB_USDT", "CRMB_USDT",
 
-        # 3. DEx, 4. AI, 5. Metaverse, 6. Meme, 7. RWA, 8. Privacy additional items
+        # Additional Items
         "HOT_USDT", "BANANA_USDT", "LRC_USDT", "FET_USDT", "VIRTUAL_USDT", "SENT_USDT", "GLM_USDT", "CHIP_USDT", "IO_USDT", "KAITO_USDT",
         "TURBO_USDT", "AI_USDT", "HOLO_USDT", "NIL_USDT", "PHA_USDT", "C_USDT", "ALLO_USDT", "ARK_USDT", "OPEN_USDT", "LUNA_USDT",
         "MAGIC_USDT", "OPG_USDT", "BMT_USDT", "AIXBT_USDT", "MIRA_USDT", "NEWT_USDT", "SAPIEN_USDT", "ROBO_USDT", "SHELL_USDT", "SAGA_USDT",
@@ -74,7 +73,6 @@ def get_mexc_futures_symbols():
         "TST_USDT", "CHILLGUY_USDT", "ONDO_USDT", "CFG_USDT", "ID_USDT", "LSK_USDT", "RVN_USDT", "LUMIA_USDT", "PROPC_USDT", "DASH_USDT",
         "XVG_USDT", "ZKP_USDT", "ANYONE_USDT"
     ]
-    # Duplicates remove karne ke liye set use kar ke wapas list bana lein
     return list(dict.fromkeys(symbols))
 
 def get_klines(symbol, interval, limit=100):
@@ -95,7 +93,6 @@ def get_klines(symbol, interval, limit=100):
         pass
     return None, None, None, None, None
 
-# --- RSI CALCULATION ---
 def calculate_rsi(closes, period=14):
     deltas = np.diff(closes)
     seed = deltas[:period+1]
@@ -117,7 +114,6 @@ def calculate_rsi(closes, period=14):
 
     return rsi
 
-# --- PIVOT FINDER ---
 def find_pivots(arr, order=3):
     peaks = []
     troughs = []
@@ -128,7 +124,6 @@ def find_pivots(arr, order=3):
             troughs.append((i, arr[i]))
     return peaks, troughs
 
-# --- STRICT REAL PATTERN DETECTION ---
 def detect_patterns_with_time(closes, highs, lows, rsi, times):
     if len(rsi) < 35:
         return None, None, ("", ""), False
@@ -210,7 +205,6 @@ def detect_patterns_with_time(closes, highs, lows, rsi, times):
 
     return bullish_pattern, bearish_pattern, (pattern_time_str, pattern_date_str), is_fresh_signal
 
-# --- PLOT CHART IMAGE WITH EMBEDDED TABLE AT THE BOTTOM ---
 def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, alert_table_text, file_path="chart.png"):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10), gridspec_kw={'height_ratios': [2, 1]})
     
@@ -249,7 +243,6 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, alert_tabl
     plt.savefig(file_path, facecolor=fig.get_facecolor(), edgecolor='none', dpi=150)
     plt.close()
 
-# --- ALERT SENDERS ---
 def send_discord_alert(symbol, image_path):
     msg = f"🚨 **MEXC FUTURES SIGNAL ALERT** 🚨\nSymbol: `{symbol}`"
     if DISCORD_WEBHOOK_URL:
@@ -279,7 +272,6 @@ def send_gmail_alert(symbol, alert_table_text):
         except Exception as e:
             print(f"Gmail Alert Error: {e}")
 
-# --- MAIN EXECUTION ---
 def main():
     symbols = get_mexc_futures_symbols()
     print(f"Scanning {len(symbols)} selected MEXC Futures Symbols...")
