@@ -8,6 +8,7 @@ import smtplib
 from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
 
 # --- CONFIGURATION (Matched with your GitHub Secrets) ---
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
@@ -17,9 +18,12 @@ RECEIVER_EMAIL = os.getenv("GMAIL_USER")      # Send to yourself or set receiver
 
 TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
 
-# --- CUSTOM SPECIFIC SYMBOLS LIST ---
+# --- CUSTOM SPECIFIC SYMBOLS LIST (Including XAU & USOIL) ---
 def get_mexc_futures_symbols():
     symbols = [
+        # 0. Commodities & Metals
+        "XAU_USDT", "USOIL_USDT",
+
         # 1. L1
         "BTC_USDT", "ETH_USDT", "BNB_USDT", "SOL_USDT", "TRX_USDT", "ZEC_USDT", "HYPE_USDT", "XMR_USDT", "ADA_USDT", "NEAR_USDT",
         "BCH_USDT", "LTC_USDT", "AVAX_USDT", "SUI_USDT", "GRAM_USDT", "HBAR_USDT", "TAO_USDT", "CRO_USDT", "ICP_USDT", "ETC_USDT",
@@ -252,7 +256,7 @@ def send_discord_alert(symbol, image_path):
         except Exception as e:
             print(f"Discord Alert Error: {e}")
 
-def send_gmail_alert(symbol, alert_table_text):
+def send_gmail_alert(symbol, alert_table_text, image_path="alert_chart.png"):
     if SENDER_EMAIL and SENDER_PASSWORD and RECEIVER_EMAIL:
         try:
             msg = MIMEMultipart()
@@ -263,12 +267,18 @@ def send_gmail_alert(symbol, alert_table_text):
             body = f"TEXT DETAILS ALERT\nSymbol: {symbol} (MEXC Futures)\n\n{alert_table_text}"
             msg.attach(MIMEText(body, 'plain'))
 
+            if os.path.exists(image_path):
+                with open(image_path, 'rb') as f:
+                    img_data = f.read()
+                img = MIMEImage(img_data, name=os.path.basename(image_path))
+                msg.attach(img)
+
             server = smtplib.SMTP('smtp.gmail.com', 587)
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
             server.quit()
-            print(f"Gmail alert sent successfully for {symbol}!")
+            print(f"Gmail alert sent successfully with image for {symbol}!")
         except Exception as e:
             print(f"Gmail Alert Error: {e}")
 
@@ -322,7 +332,7 @@ def main():
             generate_chart_image(symbol, sample_tf, sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, alert_text_table, chart_file)
 
             send_discord_alert(symbol, chart_file)
-            send_gmail_alert(symbol, alert_text_table)
+            send_gmail_alert(symbol, alert_text_table, chart_file)
             print(f"Alert Sent for {symbol}!")
 
 if __name__ == "__main__":
