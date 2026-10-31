@@ -16,7 +16,7 @@ SENDER_EMAIL = os.getenv("GMAIL_USER")       # GMAIL_USER mapped to SENDER_EMAIL
 SENDER_PASSWORD = os.getenv("GMAIL_APP_PASS") # GMAIL_APP_PASS mapped to SENDER_PASSWORD
 RECEIVER_EMAIL = os.getenv("GMAIL_USER")      # Send to yourself or set receiver
 
-TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
+TIMEFRAMES = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d']
 
 # --- CUSTOM SPECIFIC SYMBOLS LIST (Including XAU & USOIL) ---
 def get_mexc_futures_symbols():
@@ -81,7 +81,16 @@ def get_mexc_futures_symbols():
 
 def get_klines(symbol, interval, limit=100):
     url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}"
-    tf_map = {'1m': 'Min1', '5m': 'Min5', '15m': 'Min15', '30m': 'Min30', '1h': 'Min60', '4h': 'Hour4', '1d': 'Day1'}
+    tf_map = {
+        '1m': 'Min1', 
+        '3m': 'Min3', 
+        '5m': 'Min5', 
+        '15m': 'Min15', 
+        '30m': 'Min30', 
+        '1h': 'Min60', 
+        '4h': 'Hour4', 
+        '1d': 'Day1'
+    }
     params = {'interval': tf_map.get(interval, 'Min5')}
     try:
         res = requests.get(url, params=params, timeout=10).json()
