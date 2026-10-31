@@ -188,7 +188,7 @@ def detect_patterns_with_time(closes, highs, lows, rsi, times):
             p_slope = peaks[-1][1] - peaks[-2][1]
             t_slope = troughs[-1][1] - troughs[-2][1]
             if p_slope > 0 and t_slope > 0 and t_slope > p_slope:
-                p_idx = troughs[-1][0]
+                p_idx = peaks[-1][0]
                 bearish_pattern = "Rising Wedge"
 
     if not bullish_pattern and not bearish_pattern:
@@ -273,29 +273,6 @@ def send_gmail_alert(symbol, alert_table_text):
             print(f"Gmail Alert Error: {e}")
 
 def main():
-    # --- STEP 2: STARTUP TEST MESSAGE ---
-    print("Sending Startup Test Notification...")
-    test_table = (
-        "                                  Text Details Alert                                  \n"
-        "--------------------------------------------------------------------------------------\n"
-        "T.F    Time     Date        Bulish Pattern Name          Bearish Pattern name    \n"
-        "--------------------------------------------------------------------------------------\n"
-        "5m     12:00    28.10.26    [BOT STARTUP TEST SUCCESS]   -                       \n"
-        "--------------------------------------------------------------------------------------"
-    )
-    # Dummy chart file bna kar test alert bhejna
-    fig, ax = plt.subplots(figsize=(6, 2))
-    ax.text(0.5, 0.5, "Bot Startup Test Successful!", fontsize=12, ha='center', va='center', color='white')
-    fig.patch.set_facecolor('#131722')
-    ax.set_facecolor('#131722')
-    plt.savefig("startup_test.png", facecolor=fig.get_facecolor())
-    plt.close()
-    
-    send_discord_alert("TEST_BOT", "startup_test.png")
-    send_gmail_alert("TEST_BOT", test_table)
-    print("Startup Test Notifications Sent!")
-    # -------------------------------------
-
     symbols = get_mexc_futures_symbols()
     print(f"Scanning {len(symbols)} selected MEXC Futures Symbols...")
 
