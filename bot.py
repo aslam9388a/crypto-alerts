@@ -273,28 +273,6 @@ def send_gmail_alert(symbol, alert_table_text):
             print(f"Gmail Alert Error: {e}")
 
 def main():
-    # --- QUICK GMAIL STARTUP TEST ---
-    print("Testing Gmail connection...")
-    test_table = (
-        "                                  Text Details Alert                                  \n"
-        "--------------------------------------------------------------------------------------\n"
-        "T.F    Time     Date        Bulish Pattern Name          Bearish Pattern name    \n"
-        "--------------------------------------------------------------------------------------\n"
-        "5m     12:00    28.10.26    [BOT STARTUP TEST SUCCESS]   -                       \n"
-        "--------------------------------------------------------------------------------------"
-    )
-    fig, ax = plt.subplots(figsize=(6, 2))
-    ax.text(0.5, 0.5, "Bot Startup Test Successful!", fontsize=12, ha='center', va='center', color='white')
-    fig.patch.set_facecolor('#131722')
-    ax.set_facecolor('#131722')
-    plt.savefig("startup_test.png", facecolor=fig.get_facecolor())
-    plt.close()
-    
-    send_discord_alert("TEST_BOT", "startup_test.png")
-    send_gmail_alert("TEST_BOT", test_table)
-    print("Startup Test Notifications Sent!")
-    # --------------------------------
-
     symbols = get_mexc_futures_symbols()
     print(f"Scanning {len(symbols)} selected MEXC Futures Symbols...")
 
