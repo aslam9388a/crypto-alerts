@@ -20,8 +20,8 @@ TIMEFRAMES = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d']
 
 def get_filtered_mexc_futures_symbols():
     """
-    Bot run hote hi XAU, USOIL, BTC ko permanent rakh kar 
-    baaki sab mein se sirf Top 100 high-volume symbols select karta hai.
+    XAU, USOIL, BTC ko permanent rakh kar baaki sab mein se 
+    sirf Top 100 high-volume symbols select karta hai.
     """
     url = "https://contract.mexc.com/api/v1/contract/detail"
     try:
@@ -40,19 +40,13 @@ def get_filtered_mexc_futures_symbols():
         if not symbol_volumes:
             return ["XAU_USDT", "USOIL_USDT", "BTC_USDT"]
 
-        # Volume ke hisaab se descending order mein sort karna (highest volume pehle)
         symbol_volumes.sort(key=lambda x: x["volume"], reverse=True)
-
-        # Permanent symbols jo har haal mein shamil rahenge
         permanent_symbols = ["XAU_USDT", "USOIL_USDT", "BTC_USDT"]
-
-        # Baaki symbols mein se top 100 select karna
         other_symbols = [s["symbol"] for s in symbol_volumes if s["symbol"] not in permanent_symbols]
         top_100_symbols = other_symbols[:100]
 
-        # Final list: Permanent + Top 100 Volume symbols
         final_symbols = list(dict.fromkeys(permanent_symbols + top_100_symbols))
-        print(f"Selected Permanent (BTC, XAU, USOIL) + Top 100 High-Volume Symbols. Total: {len(final_symbols)}")
+        print(f"Selected Permanent + Top 100 High-Volume Symbols. Total: {len(final_symbols)}")
         return final_symbols
 
     except Exception as e:
@@ -114,70 +108,67 @@ def find_pivots(arr, order=3):
             troughs.append((i, arr[i]))
     return peaks, troughs
 
-def detect_patterns_with_time(closes, highs, lows, rsi, times):
-    if len(rsi) < 35:
-        return None, None, ("", ""), False
+def detect_shape_patterns(arr, times):
+    """
+    Price ya RSI array par shapes (Double Bottom/Top, Head & Shoulders, Wedges) detect karta hai.
+    """
+    if len(arr) < 35:
+        return None, None, None, False
 
-    karachi_tz = timezone(timedelta(hours=5))
-    last_idx = len(closes) - 1
-
-    is_oversold = rsi[-1] < 30 or np.any(rsi[-3:] < 30)
-    is_overbought = rsi[-1] > 70 or np.any(rsi[-3:] > 70)
-
-    if not (is_oversold or is_overbought):
-        return None, None, ("", ""), False
-
+    last_idx = len(arr) - 1
     bullish_pattern = None
     bearish_pattern = None
     p_idx = None
 
-    peaks, troughs = find_pivots(closes, order=3)
+    peaks, troughs = find_pivots(arr, order=3)
     if not peaks and not troughs:
-        return None, None, ("", ""), False
+        return None, None, None, False
 
-    if is_oversold and troughs:
+    # Bullish Shapes (Bottoms / Inverses)
+    if troughs:
         if len(troughs) >= 2:
             t1, t2 = troughs[-2][1], troughs[-1][1]
-            if abs(t1 - t2) / t1 < 0.02:
+            if abs(t1 - t2) / (t1 if t1 != 0 else 1) < 0.05:
                 p_idx = troughs[-1][0]
-                if len(troughs) >= 3 and abs(troughs[-3][1] - t1) / t1 < 0.02:
-                    bullish_pattern = "Triple Bottom"
+                if len(troughs) >= 3 and abs(troughs[-3][1] - t1) / (t1 if t1 != 0 else 1) < 0.05:
+                    bullish_pattern = "Triple Bottom Shape"
                 else:
-                    bullish_pattern = "Double Bottom (W-Shape)"
+                    bullish_pattern = "Double Bottom Shape"
 
         if not bullish_pattern and len(troughs) >= 3:
             left_t, head_t, right_t = troughs[-3][1], troughs[-2][1], troughs[-1][1]
-            if head_t < left_t and head_t < right_t and abs(left_t - right_t) / left_t < 0.03:
+            if head_t < left_t and head_t < right_t:
                 p_idx = troughs[-1][0]
-                bullish_pattern = "Inverse Head & Shoulders"
+                bullish_pattern = "Inverse H&S Shape"
 
-    if is_overbought and peaks:
+    # Bearish Shapes (Tops / Rises)
+    if peaks:
         if len(peaks) >= 2:
             p1, p2 = peaks[-2][1], peaks[-1][1]
-            if abs(p1 - p2) / p1 < 0.02:
+            if abs(p1 - p2) / (p1 if p1 != 0 else 1) < 0.05:
                 p_idx = peaks[-1][0]
-                if len(peaks) >= 3 and abs(peaks[-3][1] - p1) / p1 < 0.02:
-                    bearish_pattern = "Triple Top"
+                if len(peaks) >= 3 and abs(peaks[-3][1] - p1) / (p1 if p1 != 0 else 1) < 0.05:
+                    bearish_pattern = "Triple Top Shape"
                 else:
-                    bearish_pattern = "Double Top (M-Shape)"
+                    bearish_pattern = "Double Top Shape"
 
         if not bearish_pattern and len(peaks) >= 3:
             left_h, head, right_h = peaks[-3][1], peaks[-2][1], peaks[-1][1]
-            if head > left_h and head > right_h and abs(left_h - right_h) / left_h < 0.03:
+            if head > left_h and head > right_h:
                 p_idx = peaks[-1][0]
-                bearish_pattern = "Head & Shoulders"
+                bearish_pattern = "H&S Shape"
 
     if not bullish_pattern and not bearish_pattern:
-        return None, None, ("", ""), False
+        return None, None, None, False
 
     pattern_candle_idx = p_idx if p_idx is not None else last_idx
+    karachi_tz = timezone(timedelta(hours=5))
     pattern_ts = times[pattern_candle_idx]
     dt = datetime.fromtimestamp(pattern_ts, tz=timezone.utc).astimezone(karachi_tz)
     
     pattern_time_str = dt.strftime("%H:%M")
     pattern_date_str = dt.strftime("%d.%m.%y")
-
-    is_fresh_signal = (last_idx - pattern_candle_idx) <= 2
+    is_fresh_signal = (last_idx - pattern_candle_idx) <= 3
 
     return bullish_pattern, bearish_pattern, (pattern_time_str, pattern_date_str), is_fresh_signal
 
@@ -195,7 +186,7 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, alert_tabl
         ax1.plot([val, val], [l[idx], h[idx]], color=color, linewidth=1)
         ax1.bar(val, abs(c[idx] - o[idx]), bottom=min(o[idx], c[idx]), color=color, width=0.6)
 
-    ax1.set_title(f"{symbol} ({tf}) - Real Current Signal Chart", color='white', fontsize=12, fontweight='bold')
+    ax1.set_title(f"{symbol} ({tf}) - Signal Chart", color='white', fontsize=12, fontweight='bold')
     ax1.set_facecolor('#131722')
     ax1.tick_params(colors='white')
     ax1.grid(True, color='#2a2e39', alpha=0.5)
@@ -255,7 +246,6 @@ def send_gmail_alert(symbol, alert_table_text, image_path="alert_chart.png"):
             print(f"Gmail Alert Error: {e}")
 
 def main():
-    # Bot shuru hote hi list fix kar lega (Permanent BTC, XAU, USOIL + Top 100 Volume)
     symbols = get_filtered_mexc_futures_symbols()
     print(f"Scanning total {len(symbols)} selected MEXC Futures Symbols...")
 
@@ -271,16 +261,27 @@ def main():
                 continue
 
             rsi = calculate_rsi(closes)
-            bull_pat, bear_pat, (p_time, p_date), is_fresh = detect_patterns_with_time(closes, highs, lows, rsi, times)
+            
+            # 1. Check Chart Pattern (Price Shape)
+            p_bull, p_bear, (p_time, p_date), p_fresh = detect_shape_patterns(closes, times)
+            
+            # 2. Check RSI Shape Pattern (RSI Curve Shape)
+            r_bull, r_bear, _, r_fresh = detect_shape_patterns(rsi, times)
 
-            if bull_pat or bear_pat:
+            bull_final = p_bull if p_bull else (f"RSI: {r_bull}" if r_bull else "-")
+            bear_final = p_bear if p_bear else (f"RSI: {r_bear}" if r_bear else "-")
+            
+            is_any_pattern = (p_bull or p_bear or r_bull or r_bear)
+            is_any_fresh = (p_fresh or r_fresh)
+
+            if is_any_pattern:
                 tf_results[tf] = {
                     "time": p_time,
                     "date": p_date,
-                    "bull": bull_pat if bull_pat else "-",
-                    "bear": bear_pat if bear_pat else "-"
+                    "bull": bull_final,
+                    "bear": bear_final
                 }
-                if is_fresh:
+                if is_any_fresh:
                     has_fresh_trigger = True
                     sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, sample_tf = closes, opens, highs, lows, rsi, tf
             else:
@@ -292,7 +293,7 @@ def main():
             table_lines = [
                 "                        Text Details Alert                        ",
                 "--------------------------------------------------------------------------------------",
-                f"{'T.F':<7} {'Time':<8} {'Date':<11} {'Bulish Pattern Name':<28} {'Bearish Pattern name':<20}",
+                f"{'T.F':<7} {'Time':<8} {'Date':<11} {'Bullish / RSI Shape':<28} {'Bearish / RSI Shape':<20}",
                 "--------------------------------------------------------------------------------------"
             ]
             
