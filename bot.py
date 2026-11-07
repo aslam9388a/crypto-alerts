@@ -19,10 +19,6 @@ RECEIVER_EMAIL = os.getenv("GMAIL_USER")
 TIMEFRAMES = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d']
 
 def get_filtered_mexc_futures_symbols():
-    """
-    XAU, USOIL, BTC ko permanent rakh kar baaki sab mein se 
-    sirf Top 100 high-volume symbols select karta hai.
-    """
     url = "https://contract.mexc.com/api/v1/contract/detail"
     try:
         res = requests.get(url, timeout=10).json()
@@ -109,11 +105,8 @@ def find_pivots(arr, order=3):
     return peaks, troughs
 
 def detect_shape_patterns(arr, times):
-    """
-    Price ya RSI array par shapes (Double Bottom/Top, Head & Shoulders, Wedges) detect karta hai.
-    """
     if len(arr) < 35:
-        return None, None, None, False
+        return None, None, ("-", "-"), False
 
     last_idx = len(arr) - 1
     bullish_pattern = None
@@ -122,44 +115,42 @@ def detect_shape_patterns(arr, times):
 
     peaks, troughs = find_pivots(arr, order=3)
     if not peaks and not troughs:
-        return None, None, None, False
+        return None, None, ("-", "-"), False
 
-    # Bullish Shapes (Bottoms / Inverses)
     if troughs:
         if len(troughs) >= 2:
             t1, t2 = troughs[-2][1], troughs[-1][1]
             if abs(t1 - t2) / (t1 if t1 != 0 else 1) < 0.05:
                 p_idx = troughs[-1][0]
                 if len(troughs) >= 3 and abs(troughs[-3][1] - t1) / (t1 if t1 != 0 else 1) < 0.05:
-                    bullish_pattern = "Triple Bottom Shape"
+                    bullish_pattern = "Triple Bottom"
                 else:
-                    bullish_pattern = "Double Bottom Shape"
+                    bullish_pattern = "Double Bottom"
 
         if not bullish_pattern and len(troughs) >= 3:
             left_t, head_t, right_t = troughs[-3][1], troughs[-2][1], troughs[-1][1]
             if head_t < left_t and head_t < right_t:
                 p_idx = troughs[-1][0]
-                bullish_pattern = "Inverse H&S Shape"
+                bullish_pattern = "Inv H&S"
 
-    # Bearish Shapes (Tops / Rises)
     if peaks:
         if len(peaks) >= 2:
             p1, p2 = peaks[-2][1], peaks[-1][1]
             if abs(p1 - p2) / (p1 if p1 != 0 else 1) < 0.05:
                 p_idx = peaks[-1][0]
                 if len(peaks) >= 3 and abs(peaks[-3][1] - p1) / (p1 if p1 != 0 else 1) < 0.05:
-                    bearish_pattern = "Triple Top Shape"
+                    bearish_pattern = "Triple Top"
                 else:
-                    bearish_pattern = "Double Top Shape"
+                    bearish_pattern = "Double Top"
 
         if not bearish_pattern and len(peaks) >= 3:
             left_h, head, right_h = peaks[-3][1], peaks[-2][1], peaks[-1][1]
             if head > left_h and head > right_h:
                 p_idx = peaks[-1][0]
-                bearish_pattern = "H&S Shape"
+                bearish_pattern = "H&S"
 
     if not bullish_pattern and not bearish_pattern:
-        return None, None, None, False
+        return None, None, ("-", "-"), False
 
     pattern_candle_idx = p_idx if p_idx is not None else last_idx
     karachi_tz = timezone(timedelta(hours=5))
@@ -262,22 +253,28 @@ def main():
 
             rsi = calculate_rsi(closes)
             
-            # 1. Check Chart Pattern (Price Shape)
-            p_bull, p_bear, (p_time, p_date), p_fresh = detect_shape_patterns(closes, times)
+            # 1. Check Chart Pattern (Price)
+            res_p = detect_shape_patterns(closes, times)
+            p_bull, p_bear, (p_time, p_date), p_fresh = res_p if res_p else (None, None, ("-", "-"), False)
             
-            # 2. Check RSI Shape Pattern (RSI Curve Shape)
-            r_bull, r_bear, _, r_fresh = detect_shape_patterns(rsi, times)
+            # 2. Check RSI Shape Pattern
+            res_r = detect_shape_patterns(rsi, times)
+            r_bull, r_bear, _, r_fresh = res_r if res_r else (None, None, ("-", "-"), False)
 
-            bull_final = p_bull if p_bull else (f"RSI: {r_bull}" if r_bull else "-")
-            bear_final = p_bear if p_bear else (f"RSI: {r_bear}" if r_bear else "-")
+            # REQUIREMENT: Both Chart Pattern AND RSI Shape must be present simultaneously (AND condition)
+            bull_matched = (p_bull is not None and r_bull is not None)
+            bear_matched = (p_bear is not None and r_bear is not None)
+
+            bull_final = f"{p_bull} + RSI:{r_bull}" if bull_matched else "-"
+            bear_final = f"{p_bear} + RSI:{r_bear}" if bear_matched else "-"
             
-            is_any_pattern = (p_bull or p_bear or r_bull or r_bear)
-            is_any_fresh = (p_fresh or r_fresh)
+            is_any_pattern = (bull_matched or bear_matched)
+            is_any_fresh = (p_fresh and r_fresh)
 
             if is_any_pattern:
                 tf_results[tf] = {
-                    "time": p_time,
-                    "date": p_date,
+                    "time": p_time if p_time else "",
+                    "date": p_date if p_date else "",
                     "bull": bull_final,
                     "bear": bear_final
                 }
@@ -293,7 +290,7 @@ def main():
             table_lines = [
                 "                        Text Details Alert                        ",
                 "--------------------------------------------------------------------------------------",
-                f"{'T.F':<7} {'Time':<8} {'Date':<11} {'Bullish / RSI Shape':<28} {'Bearish / RSI Shape':<20}",
+                f"{'T.F':<7} {'Time':<8} {'Date':<11} {'Bullish (Price + RSI)':<28} {'Bearish (Price + RSI)':<20}",
                 "--------------------------------------------------------------------------------------"
             ]
             
