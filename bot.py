@@ -19,59 +19,34 @@ RECEIVER_EMAIL = os.getenv("GMAIL_USER")
 TIMEFRAMES = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d']
 
 def get_filtered_mexc_futures_symbols():
-    """
-    MEXC se saare futures symbols aur unka 24h volume fetch karta hai.
-    XAU, USOIL, aur BTC ko permanent rakhta hai, aur baaki symbols 
-    ka volume check karke sirf top 50% high-volume symbols select karta hai.
-    """
     url = "https://contract.mexc.com/api/v1/contract/detail"
     try:
         res = requests.get(url, timeout=10).json()
         if not res.get("success") or "data" not in res:
-            print("Failed to fetch symbols detail from MEXC. Using fallback list.")
             return ["XAU_USDT", "USOIL_USDT", "BTC_USDT", "ETH_USDT", "SOL_USDT"]
 
         symbol_volumes = []
-        
         for item in res["data"]:
-            symbol = item.get("symbol") # Maslan: "BTC_USDT"
-            # Sirf USDT pairs select karein
+            symbol = item.get("symbol")
             if not symbol or not symbol.endswith("_USDT"):
                 continue
-            
-            # Volume ya turnover nikalna (24h volume)
-            # MEXC API mein 'holdVol' ya 'volume24' ho sakta hai
             volume = float(item.get("volume24", 0) or item.get("amount24", 0) or 0)
-            
             symbol_volumes.append({"symbol": symbol, "volume": volume})
 
         if not symbol_volumes:
             return ["XAU_USDT", "USOIL_USDT", "BTC_USDT"]
 
-        # Volume ke hisaab se descending order mein sort karna (highest volume pehle)
         symbol_volumes.sort(key=lambda x: x["volume"], reverse=True)
-
-        # Permanent symbols jo har haal mein chahiye
         permanent_symbols = ["XAU_USDT", "USOIL_USDT", "BTC_USDT"]
-
-        # Baaki symbols ko filter karna
         other_symbols = [s["symbol"] for s in symbol_volumes if s["symbol"] not in permanent_symbols]
 
-        # Top 50% symbols select karna from the rest
         half_len = len(other_symbols) // 2
         top_50_percent = other_symbols[:half_len]
 
-        # Final list: Permanent + Top 50% Volume symbols
         final_symbols = list(dict.fromkeys(permanent_symbols + top_50_percent))
-        
-        print(f"Total active symbols fetched: {len(symbol_volumes)}")
-        print(f"Filtered down to top 50% high volume + permanent items: {len(final_symbols)} symbols selected.")
         return final_symbols
-
     except Exception as e:
-        print(f"Error fetching filtered symbols: {e}")
-        # Fallback list agar API mein koi masla aaye
-        return ["XAU_USDT", "USOIL_USDT", "BTC_USDT", "ETH_USDT", "SOL_USDT", "BNB_USDT", "XRP_USDT", "ADA_USDT"]
+        return ["XAU_USDT", "USOIL_USDT", "BTC_USDT", "ETH_USDT", "SOL_USDT"]
 
 def get_klines(symbol, interval, limit=100):
     url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}"
@@ -225,7 +200,8 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, alert_tabl
     ax2.grid(True, color='#2a2e39', alpha=0.5)
     ax2.legend(loc="upper left", facecolor='#131722', labelcolor='white')
 
-    fig.text(0.05, 0.02, alert_table_text, family='monospace', fontsize=8, color['white'], 
+    # Fixed syntax here ('white' string instead of color['white'])
+    fig.text(0.05, 0.02, alert_table_text, family='monospace', fontsize=8, color='white', 
              bbox=dict(boxstyle='round', facecolor='#1e222d', edgecolor='#2a2e39'))
 
     fig.patch.set_facecolor('#131722')
@@ -269,7 +245,6 @@ def send_gmail_alert(symbol, alert_table_text, image_path="alert_chart.png"):
             print(f"Gmail Alert Error: {e}")
 
 def main():
-    # Ab yeh function automatically live volume fetch karega aur top 50% select karega
     symbols = get_filtered_mexc_futures_symbols()
     print(f"Scanning {len(symbols)} high-volume MEXC Futures Symbols...")
 
@@ -298,9 +273,12 @@ def main():
                     has_fresh_trigger = True
                     sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, sample_tf = closes, opens, highs, lows, rsi, tf
             else:
-                tf_results[tf] = {"time": "", "date": "", "bull": "", "bear": "-"}
+                tf_results[tf] = {"time": "", "date": "", "bull": "-", "bear": "-"}
 
             time.sleep(0.05)
+
+        if has_has_fresh_trigger if 'has_fresh_trigger' in locals() else has_fresh_trigger: # safe check
+            pass
 
         if has_fresh_trigger:
             table_lines = [
