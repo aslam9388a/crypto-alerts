@@ -40,7 +40,6 @@ def get_filtered_mexc_futures_symbols():
         permanent_symbols = ["XAU_USDT", "USOIL_USDT", "BTC_USDT"]
         other_symbols = [s["symbol"] for s in symbol_volumes if s["symbol"] not in permanent_symbols]
         
-        # BTC, XAU, USOIL permanent + Top 50 High-Volume symbols
         top_50_symbols = other_symbols[:50]
 
         final_symbols = list(dict.fromkeys(permanent_symbols + top_50_symbols))
@@ -115,42 +114,49 @@ def detect_shape_patterns(arr, times):
     bullish_pattern = None
     bearish_pattern = None
     p_idx = None
+    is_fresh_signal = False
 
     peaks, troughs = find_pivots(arr, order=3)
     if not peaks and not troughs:
         return None, None, ("-", "-"), False
 
+    # Check Troughs (Bullish) - Recent only
     if troughs:
-        if len(troughs) >= 2:
-            t1, t2 = troughs[-2][1], troughs[-1][1]
-            if abs(t1 - t2) / (t1 if t1 != 0 else 1) < 0.05:
-                p_idx = troughs[-1][0]
-                if len(troughs) >= 3 and abs(troughs[-3][1] - t1) / (t1 if t1 != 0 else 1) < 0.05:
-                    bullish_pattern = "Triple Bottom"
-                else:
-                    bullish_pattern = "Double Bottom"
+        last_trough_idx = troughs[-1][0]
+        if (last_idx - last_trough_idx) <= 3: # Recent fresh check
+            if len(troughs) >= 2:
+                t1, t2 = troughs[-2][1], troughs[-1][1]
+                if abs(t1 - t2) / (t1 if t1 != 0 else 1) < 0.05:
+                    p_idx = troughs[-1][0]
+                    if len(troughs) >= 3 and abs(troughs[-3][1] - t1) / (t1 if t1 != 0 else 1) < 0.05:
+                        bullish_pattern = "Triple Bottom"
+                    else:
+                        bullish_pattern = "Double Bottom"
 
-        if not bullish_pattern and len(troughs) >= 3:
-            left_t, head_t, right_t = troughs[-3][1], troughs[-2][1], troughs[-1][1]
-            if head_t < left_t and head_t < right_t:
-                p_idx = troughs[-1][0]
-                bullish_pattern = "Inverse Head & Shoulders"
+            if not bullish_pattern and len(troughs) >= 3:
+                left_t, head_t, right_t = troughs[-3][1], troughs[-2][1], troughs[-1][1]
+                if head_t < left_t and head_t < right_t:
+                    p_idx = troughs[-1][0]
+                    bullish_pattern = "Inverse H&S"
 
-    if peaks:
-        if len(peaks) >= 2:
-            p1, p2 = peaks[-2][1], peaks[-1][1]
-            if abs(p1 - p2) / (p1 if p1 != 0 else 1) < 0.05:
-                p_idx = peaks[-1][0]
-                if len(peaks) >= 3 and abs(peaks[-3][1] - p1) / (p1 if p1 != 0 else 1) < 0.05:
-                    bearish_pattern = "Triple Top"
-                else:
-                    bearish_pattern = "Double Top"
+    # Check Peaks (Bearish) - Recent only (Mutually exclusive per timeframe logic implementation)
+    if peaks and not bullish_pattern:
+        last_peak_idx = peaks[-1][0]
+        if (last_idx - last_peak_idx) <= 3:
+            if len(peaks) >= 2:
+                p1, p2 = peaks[-2][1], peaks[-1][1]
+                if abs(p1 - p2) / (p1 if p1 != 0 else 1) < 0.05:
+                    p_idx = peaks[-1][0]
+                    if len(peaks) >= 3 and abs(peaks[-3][1] - p1) / (p1 if p1 != 0 else 1) < 0.05:
+                        bearish_pattern = "Triple Top"
+                    else:
+                        bearish_pattern = "Double Top"
 
-        if not bearish_pattern and len(peaks) >= 3:
-            left_h, head, right_h = peaks[-3][1], peaks[-2][1], peaks[-1][1]
-            if head > left_h and head > right_h:
-                p_idx = peaks[-1][0]
-                bearish_pattern = "Head & Shoulders"
+            if not bearish_pattern and len(peaks) >= 3:
+                left_h, head, right_h = peaks[-3][1], peaks[-2][1], peaks[-1][1]
+                if head > left_h and head > right_h:
+                    p_idx = peaks[-1][0]
+                    bearish_pattern = "Head & Shoulders"
 
     if not bullish_pattern and not bearish_pattern:
         return None, None, ("-", "-"), False
@@ -181,7 +187,6 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, volumes, rsi, a
         ax1.plot([val, val], [l[idx], h[idx]], color=color, linewidth=1)
         ax1.bar(val, abs(c[idx] - o[idx]), bottom=min(o[idx], c[idx]), color=color, width=0.6)
 
-    # Volume bars displayed transparently at the bottom of the price chart
     ax1_vol = ax1.twinx()
     vol_colors = ['#26a69a' if c[i] >= o[i] else '#ef5350' for i in range(len(x))]
     ax1_vol.bar(x, v, color=vol_colors, alpha=0.25, width=0.6)
@@ -194,7 +199,6 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, volumes, rsi, a
     ax1.tick_params(colors='white')
     ax1.grid(True, color='#2a2e39', alpha=0.5)
 
-    # Yellow RSI Line with WHITE Top (70) and Lower (30) lines
     ax2.plot(x, rsi[-30:], color='#ffd700', linewidth=2, label="RSI (14)")
     ax2.axhline(70, color='white', linestyle='--', alpha=0.7)
     ax2.axhline(30, color='white', linestyle='--', alpha=0.7)
@@ -206,7 +210,6 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, volumes, rsi, a
     ax2.grid(True, color='#2a2e39', alpha=0.5)
     ax2.legend(loc="upper left", facecolor='#131722', labelcolor='white')
 
-    # Detailed Table Overlay at bottom
     fig.text(0.02, 0.01, alert_table_text, family='monospace', fontsize=7.2, color='white', 
              bbox=dict(boxstyle='round,pad=0.5', facecolor='#131722', edgecolor='#2a2e39', linewidth=1.5))
 
@@ -266,15 +269,31 @@ def main():
             rsi = calculate_rsi(closes)
             
             res_p = detect_shape_patterns(closes, times)
-            p_bull, p_bear, (p_time, p_date), p_fresh = res_p if res_p else (None, None, ("-", "-"), False)
+            p_bull, p_bear, (p_time_p, p_date_p), p_fresh = res_p if res_p else (None, None, ("-", "-"), False)
             
             res_r = detect_shape_patterns(rsi, times)
-            r_bull, r_bear, _, r_fresh = res_r if res_r else (None, None, ("-", "-"), False)
+            r_bull, r_bear, (p_time_r, p_date_r), r_fresh = res_r if res_r else (None, None, ("-", "-"), False)
 
-            bull_rsi_str = r_bull if r_bull else "-"
-            bull_pat_str = p_bull if p_bull else "-"
-            bear_rsi_str = r_bear if r_bear else "-"
-            bear_pat_str = p_bear if p_bear else "-"
+            # Strict Mutually Exclusive Logic per Timeframe: If Bullish exists, Bearish is empty and vice versa
+            if p_bull:
+                bull_pat_str = p_bull
+                bear_pat_str = "-"
+                p_time, p_date = p_time_p, p_date_p
+            else:
+                bull_pat_str = "-"
+                bear_pat_str = p_bear if p_bear else "-"
+                p_time, p_date = p_time_p if p_bear else ("-", "-"), p_date_p if p_bear else ("-", "-")
+
+            if r_bull:
+                bull_rsi_str = r_bull
+                bear_rsi_str = "-"
+                if p_time == "-":
+                    p_time, p_date = p_time_r, p_date_r
+            else:
+                bull_rsi_str = "-"
+                bear_rsi_str = r_bear if r_bear else "-"
+                if p_time == "-" and r_bear:
+                    p_time, p_date = p_time_r, p_date_r
 
             is_any_pattern = (p_bull or p_bear or r_bull or r_bear)
             is_any_fresh = (p_fresh or r_fresh)
@@ -283,8 +302,8 @@ def main():
             if is_any_pattern:
                 status_str = "Triggered" if is_any_fresh else "Active"
                 tf_results[tf] = {
-                    "time": p_time if p_time != "-" else (r_time if 'r_time' in locals() and r_time != "-" else "12:00 PM"),
-                    "date": p_date if p_date != "-" else "31.10.26",
+                    "time": p_time,
+                    "date": p_date,
                     "bull_rsi": bull_rsi_str,
                     "bull_pat": bull_pat_str,
                     "bear_rsi": bear_rsi_str,
@@ -319,7 +338,7 @@ def main():
 
             send_discord_alert(chart_file)
             send_gmail_alert(chart_file)
-            print(f"Picture-only Alert Sent for {symbol} with Volume and White RSI lines!")
+            print(f"Picture-only Alert Sent for {symbol} with mutually exclusive recent signals!")
 
         time.sleep(0.2)
 
