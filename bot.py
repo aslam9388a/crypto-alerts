@@ -39,10 +39,12 @@ def get_filtered_mexc_futures_symbols():
         symbol_volumes.sort(key=lambda x: x["volume"], reverse=True)
         permanent_symbols = ["XAU_USDT", "USOIL_USDT", "BTC_USDT"]
         other_symbols = [s["symbol"] for s in symbol_volumes if s["symbol"] not in permanent_symbols]
-        top_100_symbols = other_symbols[:100]
+        
+        # Updated to Top 50 High-Volume Symbols
+        top_50_symbols = other_symbols[:50]
 
-        final_symbols = list(dict.fromkeys(permanent_symbols + top_100_symbols))
-        print(f"Selected Permanent + Top 100 High-Volume Symbols. Total: {len(final_symbols)}")
+        final_symbols = list(dict.fromkeys(permanent_symbols + top_50_symbols))
+        print(f"Selected Permanent + Top 50 High-Volume Symbols. Total: {len(final_symbols)}")
         return final_symbols
 
     except Exception as e:
@@ -309,7 +311,7 @@ def main():
 
             send_discord_alert(chart_file)
             send_gmail_alert(chart_file)
-            print(f"Picture-only Alert Sent for {symbol} with separate RSI Shape columns!")
+            print(f"Picture-only Alert Sent for {symbol} with Top 50 symbols!")
 
         time.sleep(0.2)
 
