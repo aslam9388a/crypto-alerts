@@ -277,30 +277,32 @@ def main():
             rsi = calculate_rsi(closes)
             
             res_p = detect_shape_patterns(closes, times)
-            p_bull, p_bear, (p_time_p, p_date_p), p_fresh = res_p if res_p else (None, None, ("-", "-"), False)
+            if res_p:
+                p_bull, p_bear, (p_time_p, p_date_p), p_fresh = res_p
+            else:
+                p_bull, p_bear, (p_time_p, p_date_p), p_fresh = None, None, ("-", "-"), False
             
             res_r = detect_shape_patterns(rsi, times)
-            r_bull, r_bear, (p_time_r, p_date_r), r_fresh = res_r if res_r else (None, None, ("-", "-"), False)
-
-            if p_bull:
-                bull_pat_str = p_bull
-                bear_pat_str = "-"
-                p_time, p_date = p_time_p, p_date_p
+            if res_r:
+                r_bull, r_bear, (r_time_r, r_date_r), r_fresh = res_r
             else:
-                bull_pat_str = "-"
-                bear_pat_str = p_bear if p_bear else "-"
-                p_time, p_date = p_time_p if p_bear else ("-", "-"), p_date_p if p_bear else ("-", "-")
+                r_bull, r_bear, (r_time_r, r_date_r), r_fresh = None, None, ("-", "-"), False
 
-            if r_bull:
-                bull_rsi_str = r_bull
-                bear_rsi_str = "-"
-                if p_time == "-":
-                    p_time, p_date = p_time_r, p_date_r
-            else:
-                bull_rsi_str = "-"
-                bear_rsi_str = r_bear if r_bear else "-"
-                if p_time == "-" and r_bear:
-                    p_time, p_date = p_time_r, p_date_r
+            # Safe string assignments to prevent tuple formatting errors
+            bull_pat_str = p_bull if p_bull else "-"
+            bear_pat_str = p_bear if p_bear else "-"
+            bull_rsi_str = r_bull if r_bull else "-"
+            bear_rsi_str = r_bear if r_bear else "-"
+
+            # Time and Date extraction safely as strings
+            time_str = "-"
+            date_str = "-"
+            if p_bull or p_bear:
+                time_str = p_time_p if p_time_p != "-" else "-"
+                date_str = p_date_p if p_date_p != "-" else "-"
+            elif r_bull or r_bear:
+                time_str = r_time_r if r_time_r != "-" else "-"
+                date_str = r_date_r if r_date_r != "-" else "-"
 
             is_any_pattern = (p_bull or p_bear or r_bull or r_bear)
             is_any_fresh = (p_fresh or r_fresh)
@@ -309,8 +311,8 @@ def main():
             if is_any_pattern:
                 status_str = "Triggered" if is_any_fresh else "Active"
                 tf_results[tf] = {
-                    "time": p_time,
-                    "date": p_date,
+                    "time": time_str,
+                    "date": date_str,
                     "bull_rsi": bull_rsi_str,
                     "bull_pat": bull_pat_str,
                     "bear_rsi": bear_rsi_str,
@@ -323,7 +325,7 @@ def main():
             else:
                 tf_results[tf] = {"time": "-", "date": "-", "bull_rsi": "-", "bull_pat": "-", "bear_rsi": "-", "bear_pat": "-", "status": "Scanning" if is_any_fresh else "Passive"}
 
-            time.sleep(0.08) # Rate limit prevention delay per timeframe
+            time.sleep(0.08)
 
         if has_fresh_trigger:
             table_lines = [
@@ -344,11 +346,11 @@ def main():
             generate_chart_image(symbol, sample_tf, sample_closes, sample_opens, sample_highs, sample_lows, sample_volumes, sample_rsi, alert_text_table, chart_file)
 
             send_discord_alert(chart_file)
-            time.sleep(1) # Delay between discord and gmail to prevent rate limits
+            time.sleep(1)
             send_gmail_alert(chart_file)
             print(f"Picture-only Alert Sent for {symbol} successfully!")
 
-        time.sleep(0.15) # Delay between symbols scanning
+        time.sleep(0.15)
 
 if __name__ == "__main__":
     main()
