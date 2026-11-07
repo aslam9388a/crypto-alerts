@@ -12,40 +12,73 @@ from email.mime.image import MIMEImage
 
 # --- CONFIGURATION ---
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
-SENDER_EMAIL = os.getenv("GMAIL_USER")         # GMAIL_USER mapped to SENDER_EMAIL
-SENDER_PASSWORD = os.getenv("GMAIL_APP_PASS") # GMAIL_APP_PASS mapped to SENDER_PASSWORD
-RECEIVER_EMAIL = os.getenv("GMAIL_USER")      # Send to yourself or set receiver
+SENDER_EMAIL = os.getenv("GMAIL_USER")         
+SENDER_PASSWORD = os.getenv("GMAIL_APP_PASS") 
+RECEIVER_EMAIL = os.getenv("GMAIL_USER")      
 
 TIMEFRAMES = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d']
 
-def get_mexc_futures_symbols():
-    symbols = [
-        # 0. Commodities & Metals
-        "XAU_USDT", "USOIL_USDT",
+def get_filtered_mexc_futures_symbols():
+    """
+    MEXC se saare futures symbols aur unka 24h volume fetch karta hai.
+    XAU, USOIL, aur BTC ko permanent rakhta hai, aur baaki symbols 
+    ka volume check karke sirf top 50% high-volume symbols select karta hai.
+    """
+    url = "https://contract.mexc.com/api/v1/contract/detail"
+    try:
+        res = requests.get(url, timeout=10).json()
+        if not res.get("success") or "data" not in res:
+            print("Failed to fetch symbols detail from MEXC. Using fallback list.")
+            return ["XAU_USDT", "USOIL_USDT", "BTC_USDT", "ETH_USDT", "SOL_USDT"]
 
-        # 1. L1 & Major Coins
-        "BTC_USDT", "ETH_USDT", "BNB_USDT", "SOL_USDT", "TRX_USDT", "ZEC_USDT", "HYPE_USDT", "XMR_USDT", "ADA_USDT", "NEAR_USDT",
-        "BCH_USDT", "LTC_USDT", "AVAX_USDT", "SUI_USDT", "GRAM_USDT", "HBAR_USDT", "TAO_USDT", "CRO_USDT", "ICP_USDT", "ETC_USDT",
-        "KAS_USDT", "ALGO_USDT", "FIL_USDT", "INJ_USDT", "APT_USDT", "VET_USDT", "TIA_USDT", "SEI_USDT", "XPL_USDT", "XTZ_USDT",
+        symbol_volumes = []
         
-        # 2. DeFi & Popular Tokens
-        "LINK_USDT", "XLM_USDT", "UNI_USDT", "ENA_USDT", "QNT_USDT", "AAVE_USDT", "PUMP_USDT", "DOT_USDT", "WLD_USDT",
-        "RENDER_USDT", "ATOM_USDT", "AERO_USDT", "ZRO_USDT", "CAKE_USDT", "ETHFI_USDT", "PYTH_USDT", "CRV_USDT", "RAY_USDT",
-        "DOGE_USDT", "SHIB_USDT", "PEPE_USDT", "BONK_USDT", "WIF_USDT", "ONDO_USDT"
-    ]
-    return list(dict.fromkeys(symbols))
+        for item in res["data"]:
+            symbol = item.get("symbol") # Maslan: "BTC_USDT"
+            # Sirf USDT pairs select karein
+            if not symbol or not symbol.endswith("_USDT"):
+                continue
+            
+            # Volume ya turnover nikalna (24h volume)
+            # MEXC API mein 'holdVol' ya 'volume24' ho sakta hai
+            volume = float(item.get("volume24", 0) or item.get("amount24", 0) or 0)
+            
+            symbol_volumes.append({"symbol": symbol, "volume": volume})
+
+        if not symbol_volumes:
+            return ["XAU_USDT", "USOIL_USDT", "BTC_USDT"]
+
+        # Volume ke hisaab se descending order mein sort karna (highest volume pehle)
+        symbol_volumes.sort(key=lambda x: x["volume"], reverse=True)
+
+        # Permanent symbols jo har haal mein chahiye
+        permanent_symbols = ["XAU_USDT", "USOIL_USDT", "BTC_USDT"]
+
+        # Baaki symbols ko filter karna
+        other_symbols = [s["symbol"] for s in symbol_volumes if s["symbol"] not in permanent_symbols]
+
+        # Top 50% symbols select karna from the rest
+        half_len = len(other_symbols) // 2
+        top_50_percent = other_symbols[:half_len]
+
+        # Final list: Permanent + Top 50% Volume symbols
+        final_symbols = list(dict.fromkeys(permanent_symbols + top_50_percent))
+        
+        print(f"Total active symbols fetched: {len(symbol_volumes)}")
+        print(f"Filtered down to top 50% high volume + permanent items: {len(final_symbols)} symbols selected.")
+        return final_symbols
+
+    except Exception as e:
+        print(f"Error fetching filtered symbols: {e}")
+        # Fallback list agar API mein koi masla aaye
+        return ["XAU_USDT", "USOIL_USDT", "BTC_USDT", "ETH_USDT", "SOL_USDT", "BNB_USDT", "XRP_USDT", "ADA_USDT"]
 
 def get_klines(symbol, interval, limit=100):
     url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}"
     tf_map = {
-        '1m': 'Min1', 
-        '3m': 'Min3', 
-        '5m': 'Min5', 
-        '15m': 'Min15', 
-        '30m': 'Min30', 
-        '1h': 'Min60', 
-        '4h': 'Hour4', 
-        '1d': 'Day1'
+        '1m': 'Min1', '3m': 'Min3', '5m': 'Min5', 
+        '15m': 'Min15', '30m': 'Min30', '1h': 'Min60', 
+        '4h': 'Hour4', '1d': 'Day1'
     }
     params = {'interval': tf_map.get(interval, 'Min5')}
     try:
@@ -192,7 +225,7 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, alert_tabl
     ax2.grid(True, color='#2a2e39', alpha=0.5)
     ax2.legend(loc="upper left", facecolor='#131722', labelcolor='white')
 
-    fig.text(0.05, 0.02, alert_table_text, family='monospace', fontsize=8, color='white', 
+    fig.text(0.05, 0.02, alert_table_text, family='monospace', fontsize=8, color['white'], 
              bbox=dict(boxstyle='round', facecolor='#1e222d', edgecolor='#2a2e39'))
 
     fig.patch.set_facecolor('#131722')
@@ -233,11 +266,12 @@ def send_gmail_alert(symbol, alert_table_text, image_path="alert_chart.png"):
             server.quit()
             print(f"Gmail alert sent successfully with image for {symbol}!")
         except Exception as e:
-            print(f5"Gmail Alert Error: {e}")
+            print(f"Gmail Alert Error: {e}")
 
 def main():
-    symbols = get_mexc_futures_symbols()
-    print(f"Scanning {len(symbols)} selected MEXC Futures Symbols...")
+    # Ab yeh function automatically live volume fetch karega aur top 50% select karega
+    symbols = get_filtered_mexc_futures_symbols()
+    print(f"Scanning {len(symbols)} high-volume MEXC Futures Symbols...")
 
     for symbol in symbols:
         tf_results = {}
@@ -264,9 +298,8 @@ def main():
                     has_fresh_trigger = True
                     sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, sample_tf = closes, opens, highs, lows, rsi, tf
             else:
-                tf_results[tf] = {"time": "", "date": "", "bull": "-", "bear": "-"}
+                tf_results[tf] = {"time": "", "date": "", "bull": "", "bear": "-"}
 
-            # Chota sa sleep taake API rate limit na ho
             time.sleep(0.05)
 
         if has_fresh_trigger:
@@ -291,7 +324,6 @@ def main():
             send_gmail_alert(symbol, alert_text_table, chart_file)
             print(f"Alert Sent for {symbol}!")
 
-        # Har coin ke baad thoda pause
         time.sleep(0.2)
 
 if __name__ == "__main__":
