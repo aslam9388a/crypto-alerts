@@ -41,7 +41,6 @@ def get_filtered_mexc_futures_symbols():
         other_symbols = [s["symbol"] for s in symbol_volumes if s["symbol"] not in permanent_symbols]
         
         top_50_symbols = other_symbols[:50]
-
         final_symbols = list(dict.fromkeys(permanent_symbols + top_50_symbols))
         print(f"Selected Permanent + Top 50 High-Volume Symbols. Total: {len(final_symbols)}")
         return final_symbols
@@ -50,14 +49,14 @@ def get_filtered_mexc_futures_symbols():
         print(f"Error fetching symbols: {e}")
         return ["XAU_USDT", "USOIL_USDT", "BTC_USDT", "ETH_USDT", "SOL_USDT"]
 
-def get_klines(symbol, interval, limit=100):
+def get_klines(symbol, interval, limit=150): # Limit thori barha di hai taake RSI accurate calculate ho
     url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}"
     tf_map = {
         '1m': 'Min1', '3m': 'Min3', '5m': 'Min5', 
         '15m': 'Min15', '30m': 'Min30', '1h': 'Min60', 
         '4h': 'Hour4', '1d': 'Day1'
     }
-    params = {'interval': tf_map.get(interval, 'Min5')}
+    params = {'interval': tf_map.get(interval, 'Min5'), 'limit': limit}
     try:
         res = requests.get(url, params=params, timeout=10).json()
         if res.get("success") and "data" in res:
@@ -74,25 +73,41 @@ def get_klines(symbol, interval, limit=100):
     return None, None, None, None, None, None
 
 def calculate_rsi(closes, period=14):
+    """
+    TradingView exact Wilder's Smoothing (RMA) RSI Formula implementation
+    """
     if len(closes) < period + 1:
         return np.zeros_like(closes)
+    
     deltas = np.diff(closes)
-    seed = deltas[:period+1]
-    up = seed[seed >= 0].sum() / period
-    down = -seed[seed < 0].sum() / period
-    rs = up / down if down != 0 else 0
+    gains = np.where(deltas > 0, deltas, 0.0)
+    losses = np.where(deltas < 0, -deltas, 0.0)
+
     rsi = np.zeros_like(closes)
-    rsi[:period] = 100. - 100. / (1. + rs)
+    
+    # First average gain/loss (SMA for the first period)
+    avg_gain = np.mean(gains[:period])
+    avg_loss = np.mean(losses[:period])
 
-    for i in range(period, len(closes)):
-        delta = deltas[i - 1]
-        upval = delta if delta > 0 else 0.
-        downval = -delta if delta < 0 else 0.
+    if avg_loss == 0:
+        rsi[period] = 100.0
+    else:
+        rs = avg_gain / avg_loss
+        rsi[period] = 100.0 - (100.0 / (1.0 + rs))
 
-        up = (up * (period - 1) + upval) / period
-        down = (down * (period - 1) + downval) / period
-        rs = up / down if down != 0 else 0
-        rsi[i] = 100. - 100. / (1. + rs)
+    # Wilder's smoothing for the rest
+    for i in range(period + 1, len(closes)):
+        gain = gains[i - 1]
+        loss = losses[i - 1]
+        
+        avg_gain = (avg_gain * (period - 1) + gain) / period
+        avg_loss = (avg_loss * (period - 1) + loss) / period
+
+        if avg_loss == 0:
+            rsi[i] = 100.0
+        else:
+            rs = avg_gain / avg_loss
+            rsi[i] = 100.0 - (100.0 / (1.0 + rs))
 
     return rsi
 
@@ -120,10 +135,9 @@ def detect_shape_patterns(arr, times):
     if not peaks and not troughs:
         return None, None, ("-", "-"), False
 
-    # Check Troughs (Bullish) - Recent only
     if troughs:
         last_trough_idx = troughs[-1][0]
-        if (last_idx - last_trough_idx) <= 3: # Recent fresh check
+        if (last_idx - last_trough_idx) <= 3:
             if len(troughs) >= 2:
                 t1, t2 = troughs[-2][1], troughs[-1][1]
                 if abs(t1 - t2) / (t1 if t1 != 0 else 1) < 0.05:
@@ -137,9 +151,8 @@ def detect_shape_patterns(arr, times):
                 left_t, head_t, right_t = troughs[-3][1], troughs[-2][1], troughs[-1][1]
                 if head_t < left_t and head_t < right_t:
                     p_idx = troughs[-1][0]
-                    bullish_pattern = "Inverse H&S"
+                    bullish_pattern = "Inverse Head & Shoulders"
 
-    # Check Peaks (Bearish) - Recent only (Mutually exclusive per timeframe logic implementation)
     if peaks and not bullish_pattern:
         last_peak_idx = peaks[-1][0]
         if (last_idx - last_peak_idx) <= 3:
@@ -181,6 +194,7 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, volumes, rsi, a
     h = highs[-30:]
     l = lows[-30:]
     v = volumes[-30:]
+    r = rsi[-30:]
     
     for idx, val in enumerate(x):
         color = '#26a69a' if c[idx] >= o[idx] else '#ef5350'
@@ -199,11 +213,11 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, volumes, rsi, a
     ax1.tick_params(colors='white')
     ax1.grid(True, color='#2a2e39', alpha=0.5)
 
-    ax2.plot(x, rsi[-30:], color='#ffd700', linewidth=2, label="RSI (14)")
+    ax2.plot(x, r, color='#ffd700', linewidth=2, label="RSI (14)")
     ax2.axhline(70, color='white', linestyle='--', alpha=0.7)
     ax2.axhline(30, color='white', linestyle='--', alpha=0.7)
-    ax2.fill_between(x, rsi[-30:], 70, where=(rsi[-30:] >= 70), color='#ef5350', alpha=0.15)
-    ax2.fill_between(x, rsi[-30:], 30, where=(rsi[-30:] <= 30), color='#26a69a', alpha=0.15)
+    ax2.fill_between(x, r, 70, where=(r >= 70), color='#ef5350', alpha=0.15)
+    ax2.fill_between(x, r, 30, where=(r <= 30), color='#26a69a', alpha=0.15)
     
     ax2.set_facecolor('#131722')
     ax2.tick_params(colors='white')
@@ -274,7 +288,6 @@ def main():
             res_r = detect_shape_patterns(rsi, times)
             r_bull, r_bear, (p_time_r, p_date_r), r_fresh = res_r if res_r else (None, None, ("-", "-"), False)
 
-            # Strict Mutually Exclusive Logic per Timeframe: If Bullish exists, Bearish is empty and vice versa
             if p_bull:
                 bull_pat_str = p_bull
                 bear_pat_str = "-"
@@ -338,7 +351,7 @@ def main():
 
             send_discord_alert(chart_file)
             send_gmail_alert(chart_file)
-            print(f"Picture-only Alert Sent for {symbol} with mutually exclusive recent signals!")
+            print(f"Picture-only Alert Sent for {symbol} with accurate Wilder's RSI!")
 
         time.sleep(0.2)
 
