@@ -19,6 +19,10 @@ RECEIVER_EMAIL = os.getenv("GMAIL_USER")
 TIMEFRAMES = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d']
 
 def get_filtered_mexc_futures_symbols():
+    """
+    Bot run hote hi XAU, USOIL, BTC ko permanent rakh kar 
+    baaki sab mein se sirf Top 100 high-volume symbols select karta hai.
+    """
     url = "https://contract.mexc.com/api/v1/contract/detail"
     try:
         res = requests.get(url, timeout=10).json()
@@ -36,16 +40,23 @@ def get_filtered_mexc_futures_symbols():
         if not symbol_volumes:
             return ["XAU_USDT", "USOIL_USDT", "BTC_USDT"]
 
+        # Volume ke hisaab se descending order mein sort karna (highest volume pehle)
         symbol_volumes.sort(key=lambda x: x["volume"], reverse=True)
+
+        # Permanent symbols jo har haal mein shamil rahenge
         permanent_symbols = ["XAU_USDT", "USOIL_USDT", "BTC_USDT"]
+
+        # Baaki symbols mein se top 100 select karna
         other_symbols = [s["symbol"] for s in symbol_volumes if s["symbol"] not in permanent_symbols]
+        top_100_symbols = other_symbols[:100]
 
-        half_len = len(other_symbols) // 2
-        top_50_percent = other_symbols[:half_len]
-
-        final_symbols = list(dict.fromkeys(permanent_symbols + top_50_percent))
+        # Final list: Permanent + Top 100 Volume symbols
+        final_symbols = list(dict.fromkeys(permanent_symbols + top_100_symbols))
+        print(f"Selected Permanent (BTC, XAU, USOIL) + Top 100 High-Volume Symbols. Total: {len(final_symbols)}")
         return final_symbols
+
     except Exception as e:
+        print(f"Error fetching symbols: {e}")
         return ["XAU_USDT", "USOIL_USDT", "BTC_USDT", "ETH_USDT", "SOL_USDT"]
 
 def get_klines(symbol, interval, limit=100):
@@ -244,8 +255,9 @@ def send_gmail_alert(symbol, alert_table_text, image_path="alert_chart.png"):
             print(f"Gmail Alert Error: {e}")
 
 def main():
+    # Bot shuru hote hi list fix kar lega (Permanent BTC, XAU, USOIL + Top 100 Volume)
     symbols = get_filtered_mexc_futures_symbols()
-    print(f"Scanning {len(symbols)} high-volume MEXC Futures Symbols...")
+    print(f"Scanning total {len(symbols)} selected MEXC Futures Symbols...")
 
     for symbol in symbols:
         tf_results = {}
