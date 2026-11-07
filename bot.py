@@ -21,7 +21,7 @@ TIMEFRAMES = ['1m', '3m', '5m', '15m', '30m', '1h', '4h', '1d']
 def get_filtered_mexc_futures_symbols():
     url = "https://contract.mexc.com/api/v1/contract/detail"
     try:
-        res = requests.get(url, timeout=10).json()
+        res = requests.get(url, timeout=15).json()
         if not res.get("success") or "data" not in res:
             return ["XAU_USDT", "USOIL_USDT", "BTC_USDT", "ETH_USDT", "SOL_USDT"]
 
@@ -49,7 +49,7 @@ def get_filtered_mexc_futures_symbols():
         print(f"Error fetching symbols: {e}")
         return ["XAU_USDT", "USOIL_USDT", "BTC_USDT", "ETH_USDT", "SOL_USDT"]
 
-def get_klines(symbol, interval, limit=150): # Limit thori barha di hai taake RSI accurate calculate ho
+def get_klines(symbol, interval, limit=150):
     url = f"https://contract.mexc.com/api/v1/contract/kline/{symbol}"
     tf_map = {
         '1m': 'Min1', '3m': 'Min3', '5m': 'Min5', 
@@ -73,9 +73,6 @@ def get_klines(symbol, interval, limit=150): # Limit thori barha di hai taake RS
     return None, None, None, None, None, None
 
 def calculate_rsi(closes, period=14):
-    """
-    TradingView exact Wilder's Smoothing (RMA) RSI Formula implementation
-    """
     if len(closes) < period + 1:
         return np.zeros_like(closes)
     
@@ -84,8 +81,6 @@ def calculate_rsi(closes, period=14):
     losses = np.where(deltas < 0, -deltas, 0.0)
 
     rsi = np.zeros_like(closes)
-    
-    # First average gain/loss (SMA for the first period)
     avg_gain = np.mean(gains[:period])
     avg_loss = np.mean(losses[:period])
 
@@ -95,7 +90,6 @@ def calculate_rsi(closes, period=14):
         rs = avg_gain / avg_loss
         rsi[period] = 100.0 - (100.0 / (1.0 + rs))
 
-    # Wilder's smoothing for the rest
     for i in range(period + 1, len(closes)):
         gain = gains[i - 1]
         loss = losses[i - 1]
@@ -236,7 +230,7 @@ def send_discord_alert(image_path):
     if DISCORD_WEBHOOK_URL:
         try:
             with open(image_path, 'rb') as f:
-                requests.post(DISCORD_WEBHOOK_URL, files={"file": f})
+                requests.post(DISCORD_WEBHOOK_URL, files={"file": f}, timeout=10)
         except Exception as e:
             print(f"Discord Alert Error: {e}")
 
@@ -256,7 +250,7 @@ def send_gmail_alert(image_path="alert_chart.png"):
                 img = MIMEImage(img_data, name=os.path.basename(image_path))
                 msg.attach(img)
 
-            server = smtplib.SMTP('smtp.gmail.com', 587)
+            server = smtplib.SMTP('smtp.gmail.com', 587, timeout=15)
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
@@ -329,7 +323,7 @@ def main():
             else:
                 tf_results[tf] = {"time": "-", "date": "-", "bull_rsi": "-", "bull_pat": "-", "bear_rsi": "-", "bear_pat": "-", "status": "Scanning" if is_any_fresh else "Passive"}
 
-            time.sleep(0.05)
+            time.sleep(0.08) # Rate limit prevention delay per timeframe
 
         if has_fresh_trigger:
             table_lines = [
@@ -350,10 +344,11 @@ def main():
             generate_chart_image(symbol, sample_tf, sample_closes, sample_opens, sample_highs, sample_lows, sample_volumes, sample_rsi, alert_text_table, chart_file)
 
             send_discord_alert(chart_file)
+            time.sleep(1) # Delay between discord and gmail to prevent rate limits
             send_gmail_alert(chart_file)
-            print(f"Picture-only Alert Sent for {symbol} with accurate Wilder's RSI!")
+            print(f"Picture-only Alert Sent for {symbol} successfully!")
 
-        time.sleep(0.2)
+        time.sleep(0.15) # Delay between symbols scanning
 
 if __name__ == "__main__":
     main()
