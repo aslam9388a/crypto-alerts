@@ -200,7 +200,6 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, alert_tabl
     ax2.grid(True, color='#2a2e39', alpha=0.5)
     ax2.legend(loc="upper left", facecolor='#131722', labelcolor='white')
 
-    # Fixed syntax here ('white' string instead of color['white'])
     fig.text(0.05, 0.02, alert_table_text, family='monospace', fontsize=8, color='white', 
              bbox=dict(boxstyle='round', facecolor='#1e222d', edgecolor='#2a2e39'))
 
@@ -276,9 +275,6 @@ def main():
                 tf_results[tf] = {"time": "", "date": "", "bull": "-", "bear": "-"}
 
             time.sleep(0.05)
-
-        if has_has_fresh_trigger if 'has_fresh_trigger' in locals() else has_fresh_trigger: # safe check
-            pass
 
         if has_fresh_trigger:
             table_lines = [
