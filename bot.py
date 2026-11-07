@@ -67,11 +67,12 @@ def get_klines(symbol, interval, limit=100):
             highs = np.array(data["high"], dtype=float)
             lows = np.array(data["low"], dtype=float)
             opens = np.array(data["open"], dtype=float)
+            volumes = np.array(data.get("volume", data.get("vol", np.zeros_like(closes))), dtype=float)
             times = np.array(data["time"], dtype=int)
-            return opens, highs, lows, closes, times
+            return opens, highs, lows, closes, volumes, times
     except Exception as e:
         pass
-    return None, None, None, None, None
+    return None, None, None, None, None, None
 
 def calculate_rsi(closes, period=14):
     if len(closes) < period + 1:
@@ -165,8 +166,7 @@ def detect_shape_patterns(arr, times):
 
     return bullish_pattern, bearish_pattern, (pattern_time_str, pattern_date_str), is_fresh_signal
 
-def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, alert_table_text, file_path="chart.png"):
-    # Image size thori aur wide kar di hai taake table aur lamba text mukammal saaf aaye
+def generate_chart_image(symbol, tf, closes, opens, highs, lows, volumes, rsi, alert_table_text, file_path="chart.png"):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 12.5), gridspec_kw={'height_ratios': [2, 1]})
     
     x = np.arange(len(closes[-30:]))
@@ -174,21 +174,30 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, alert_tabl
     c = closes[-30:]
     h = highs[-30:]
     l = lows[-30:]
+    v = volumes[-30:]
     
     for idx, val in enumerate(x):
         color = '#26a69a' if c[idx] >= o[idx] else '#ef5350'
         ax1.plot([val, val], [l[idx], h[idx]], color=color, linewidth=1)
         ax1.bar(val, abs(c[idx] - o[idx]), bottom=min(o[idx], c[idx]), color=color, width=0.6)
 
+    # Volume bars displayed transparently at the bottom of the price chart
+    ax1_vol = ax1.twinx()
+    vol_colors = ['#26a69a' if c[i] >= o[i] else '#ef5350' for i in range(len(x))]
+    ax1_vol.bar(x, v, color=vol_colors, alpha=0.25, width=0.6)
+    max_v = v.max() if len(v) > 0 and v.max() > 0 else 1
+    ax1_vol.set_ylim(0, max_v * 4)
+    ax1_vol.axis('off')
+
     ax1.set_title(f"MEXC Futures | {symbol} ({tf})", color='white', fontsize=12, fontweight='bold', loc='left')
     ax1.set_facecolor('#131722')
     ax1.tick_params(colors='white')
     ax1.grid(True, color='#2a2e39', alpha=0.5)
 
-    # Yellow RSI Line (No extra EMA)
+    # Yellow RSI Line with WHITE Top (70) and Lower (30) lines
     ax2.plot(x, rsi[-30:], color='#ffd700', linewidth=2, label="RSI (14)")
-    ax2.axhline(70, color='#ef5350', linestyle='--', alpha=0.7)
-    ax2.axhline(30, color='#26a69a', linestyle='--', alpha=0.7)
+    ax2.axhline(70, color='white', linestyle='--', alpha=0.7)
+    ax2.axhline(30, color='white', linestyle='--', alpha=0.7)
     ax2.fill_between(x, rsi[-30:], 70, where=(rsi[-30:] >= 70), color='#ef5350', alpha=0.15)
     ax2.fill_between(x, rsi[-30:], 30, where=(rsi[-30:] <= 30), color='#26a69a', alpha=0.15)
     
@@ -197,7 +206,7 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, alert_tabl
     ax2.grid(True, color='#2a2e39', alpha=0.5)
     ax2.legend(loc="upper left", facecolor='#131722', labelcolor='white')
 
-    # Detailed Table Overlay at bottom with wide columns for full text display
+    # Detailed Table Overlay at bottom
     fig.text(0.02, 0.01, alert_table_text, family='monospace', fontsize=7.2, color='white', 
              bbox=dict(boxstyle='round,pad=0.5', facecolor='#131722', edgecolor='#2a2e39', linewidth=1.5))
 
@@ -246,21 +255,19 @@ def main():
     for symbol in symbols:
         tf_results = {}
         has_fresh_trigger = False
-        sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, sample_tf = None, None, None, None, None, None
+        sample_closes, sample_opens, sample_highs, sample_lows, sample_volumes, sample_rsi, sample_tf = None, None, None, None, None, None, None
 
         for tf in TIMEFRAMES:
-            opens, highs, lows, closes, times = get_klines(symbol, tf)
+            opens, highs, lows, closes, volumes, times = get_klines(symbol, tf)
             if closes is None or len(closes) < 35:
                 tf_results[tf] = {"time": "-", "date": "-", "bull_rsi": "-", "bull_pat": "-", "bear_rsi": "-", "bear_pat": "-", "status": "Passive"}
                 continue
 
             rsi = calculate_rsi(closes)
             
-            # 1. Check Chart Pattern (Price)
             res_p = detect_shape_patterns(closes, times)
             p_bull, p_bear, (p_time, p_date), p_fresh = res_p if res_p else (None, None, ("-", "-"), False)
             
-            # 2. Check RSI Shape Pattern
             res_r = detect_shape_patterns(rsi, times)
             r_bull, r_bear, _, r_fresh = res_r if res_r else (None, None, ("-", "-"), False)
 
@@ -286,7 +293,7 @@ def main():
                 }
                 if is_any_fresh:
                     has_fresh_trigger = True
-                    sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, sample_tf = closes, opens, highs, lows, rsi, tf
+                    sample_closes, sample_opens, sample_highs, sample_lows, sample_volumes, sample_rsi, sample_tf = closes, opens, highs, lows, volumes, rsi, tf
             else:
                 tf_results[tf] = {"time": "-", "date": "-", "bull_rsi": "-", "bull_pat": "-", "bear_rsi": "-", "bear_pat": "-", "status": "Scanning" if is_any_fresh else "Passive"}
 
@@ -308,11 +315,11 @@ def main():
             alert_text_table = "\n".join(table_lines)
 
             chart_file = "alert_chart.png"
-            generate_chart_image(symbol, sample_tf, sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, alert_text_table, chart_file)
+            generate_chart_image(symbol, sample_tf, sample_closes, sample_opens, sample_highs, sample_lows, sample_volumes, sample_rsi, alert_text_table, chart_file)
 
             send_discord_alert(chart_file)
             send_gmail_alert(chart_file)
-            print(f"Picture-only Alert Sent for {symbol} with full column width!")
+            print(f"Picture-only Alert Sent for {symbol} with Volume and White RSI lines!")
 
         time.sleep(0.2)
 
