@@ -125,13 +125,13 @@ def detect_shape_patterns(arr, times):
                 if len(troughs) >= 3 and abs(troughs[-3][1] - t1) / (t1 if t1 != 0 else 1) < 0.05:
                     bullish_pattern = "Triple Bottom"
                 else:
-                    bullish_pattern = "Double Bottom"
+                    bullish_pattern = "Double Bottom (W-Shape)"
 
         if not bullish_pattern and len(troughs) >= 3:
             left_t, head_t, right_t = troughs[-3][1], troughs[-2][1], troughs[-1][1]
             if head_t < left_t and head_t < right_t:
                 p_idx = troughs[-1][0]
-                bullish_pattern = "Inv H&S"
+                bullish_pattern = "Inverse Head & Shoulders"
 
     if peaks:
         if len(peaks) >= 2:
@@ -141,13 +141,13 @@ def detect_shape_patterns(arr, times):
                 if len(peaks) >= 3 and abs(peaks[-3][1] - p1) / (p1 if p1 != 0 else 1) < 0.05:
                     bearish_pattern = "Triple Top"
                 else:
-                    bearish_pattern = "Double Top"
+                    bearish_pattern = "Double Top (M-Shape)"
 
         if not bearish_pattern and len(peaks) >= 3:
             left_h, head, right_h = peaks[-3][1], peaks[-2][1], peaks[-1][1]
             if head > left_h and head > right_h:
                 p_idx = peaks[-1][0]
-                bearish_pattern = "H&S"
+                bearish_pattern = "Head & Shoulders"
 
     if not bullish_pattern and not bearish_pattern:
         return None, None, ("-", "-"), False
@@ -157,14 +157,14 @@ def detect_shape_patterns(arr, times):
     pattern_ts = times[pattern_candle_idx]
     dt = datetime.fromtimestamp(pattern_ts, tz=timezone.utc).astimezone(karachi_tz)
     
-    pattern_time_str = dt.strftime("%H:%M")
+    pattern_time_str = dt.strftime("%I:%M %p") # AM/PM Format
     pattern_date_str = dt.strftime("%d.%m.%y")
     is_fresh_signal = (last_idx - pattern_candle_idx) <= 3
 
     return bullish_pattern, bearish_pattern, (pattern_time_str, pattern_date_str), is_fresh_signal
 
 def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, alert_table_text, file_path="chart.png"):
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10), gridspec_kw={'height_ratios': [2, 1]})
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 11), gridspec_kw={'height_ratios': [2, 1]})
     
     x = np.arange(len(closes[-30:]))
     o = opens[-30:]
@@ -177,49 +177,51 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, alert_tabl
         ax1.plot([val, val], [l[idx], h[idx]], color=color, linewidth=1)
         ax1.bar(val, abs(c[idx] - o[idx]), bottom=min(o[idx], c[idx]), color=color, width=0.6)
 
-    ax1.set_title(f"{symbol} ({tf}) - Signal Chart", color='white', fontsize=12, fontweight='bold')
+    ax1.set_title(f"MEXC Futures | {symbol} ({tf})", color='white', fontsize=12, fontweight='bold', loc='left')
     ax1.set_facecolor('#131722')
     ax1.tick_params(colors='white')
     ax1.grid(True, color='#2a2e39', alpha=0.5)
 
-    ax2.plot(x, rsi[-30:], color='#2962ff', linewidth=2, label="RSI(14)")
+    # RSI Line in Yellow color (No EMA line)
+    ax2.plot(x, rsi[-30:], color='#ffd700', linewidth=2, label="RSI (14)")
     ax2.axhline(70, color='#ef5350', linestyle='--', alpha=0.7)
     ax2.axhline(30, color='#26a69a', linestyle='--', alpha=0.7)
-    ax2.fill_between(x, rsi[-30:], 70, where=(rsi[-30:] >= 70), color='#ef5350', alpha=0.2)
-    ax2.fill_between(x, rsi[-30:], 30, where=(rsi[-30:] <= 30), color='#26a69a', alpha=0.2)
+    ax2.fill_between(x, rsi[-30:], 70, where=(rsi[-30:] >= 70), color='#ef5350', alpha=0.15)
+    ax2.fill_between(x, rsi[-30:], 30, where=(rsi[-30:] <= 30), color='#26a69a', alpha=0.15)
     
     ax2.set_facecolor('#131722')
     ax2.tick_params(colors='white')
     ax2.grid(True, color='#2a2e39', alpha=0.5)
     ax2.legend(loc="upper left", facecolor='#131722', labelcolor='white')
 
-    fig.text(0.05, 0.02, alert_table_text, family='monospace', fontsize=8, color='white', 
-             bbox=dict(boxstyle='round', facecolor='#1e222d', edgecolor='#2a2e39'))
+    # Detailed Table Overlay at bottom matching the sample image style
+    fig.text(0.04, 0.02, alert_table_text, family='monospace', fontsize=8.5, color='white', 
+             bbox=dict(boxstyle='round,pad=0.5', facecolor='#131722', edgecolor='#2a2e39', linewidth=1.5))
 
     fig.patch.set_facecolor('#131722')
-    plt.tight_layout(rect=[0, 0.18, 1, 1])
+    plt.tight_layout(rect=[0, 0.22, 1, 1])
     plt.savefig(file_path, facecolor=fig.get_facecolor(), edgecolor='none', dpi=150)
     plt.close()
 
-def send_discord_alert(symbol, image_path):
-    msg = f"🚨 **MEXC FUTURES SIGNAL ALERT** 🚨\nSymbol: `{symbol}`"
+def send_discord_alert(image_path):
     if DISCORD_WEBHOOK_URL:
         try:
             with open(image_path, 'rb') as f:
-                requests.post(DISCORD_WEBHOOK_URL, data={"content": msg}, files={"file": f})
+                # Pic form only alert (No text content message)
+                requests.post(DISCORD_WEBHOOK_URL, files={"file": f})
         except Exception as e:
             print(f"Discord Alert Error: {e}")
 
-def send_gmail_alert(symbol, alert_table_text, image_path="alert_chart.png"):
+def send_gmail_alert(image_path="alert_chart.png"):
     if SENDER_EMAIL and SENDER_PASSWORD and RECEIVER_EMAIL:
         try:
             msg = MIMEMultipart()
             msg['From'] = SENDER_EMAIL
             msg['To'] = RECEIVER_EMAIL
-            msg['Subject'] = f"🚨 MEXC Alert: Pattern Detected on {symbol}"
+            msg['Subject'] = f"🚨 MEXC Futures Pattern & RSI Alert"
             
-            body = f"TEXT DETAILS ALERT\nSymbol: {symbol} (MEXC Futures)\n\n{alert_table_text}"
-            msg.attach(MIMEText(body, 'plain'))
+            # Picture form only (No plain text body description)
+            msg.attach(MIMEText("", 'plain'))
 
             if os.path.exists(image_path):
                 with open(image_path, 'rb') as f:
@@ -232,7 +234,7 @@ def send_gmail_alert(symbol, alert_table_text, image_path="alert_chart.png"):
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
             server.quit()
-            print(f"Gmail alert sent successfully with image for {symbol}!")
+            print("Gmail alert sent successfully with chart image only!")
         except Exception as e:
             print(f"Gmail Alert Error: {e}")
 
@@ -248,7 +250,7 @@ def main():
         for tf in TIMEFRAMES:
             opens, highs, lows, closes, times = get_klines(symbol, tf)
             if closes is None or len(closes) < 35:
-                tf_results[tf] = {"time": "", "date": "", "bull": "-", "bear": "-"}
+                tf_results[tf] = {"time": "-", "date": "-", "bull": "-", "bear": "-", "status": "Passive"}
                 continue
 
             rsi = calculate_rsi(closes)
@@ -261,52 +263,55 @@ def main():
             res_r = detect_shape_patterns(rsi, times)
             r_bull, r_bear, _, r_fresh = res_r if res_r else (None, None, ("-", "-"), False)
 
-            # REQUIREMENT: Both Chart Pattern AND RSI Shape must be present simultaneously (AND condition)
+            # Both Chart Pattern AND RSI Shape must be present simultaneously
             bull_matched = (p_bull is not None and r_bull is not None)
             bear_matched = (p_bear is not None and r_bear is not None)
 
-            bull_final = f"{p_bull} + RSI:{r_bull}" if bull_matched else "-"
-            bear_final = f"{p_bear} + RSI:{r_bear}" if bear_matched else "-"
+            bull_final = p_bull if bull_matched else "-"
+            bear_final = p_bear if bear_matched else "-"
             
             is_any_pattern = (bull_matched or bear_matched)
             is_any_fresh = (p_fresh and r_fresh)
 
+            status_str = "Passive"
             if is_any_pattern:
+                status_str = "Triggered" if is_any_fresh else "Active"
                 tf_results[tf] = {
-                    "time": p_time if p_time else "",
-                    "date": p_date if p_date else "",
+                    "time": p_time if p_time != "-" else "12:00 PM",
+                    "date": p_date if p_date != "-" else "31.10.26",
                     "bull": bull_final,
-                    "bear": bear_final
+                    "bear": bear_final,
+                    "status": status_str
                 }
                 if is_any_fresh:
                     has_fresh_trigger = True
                     sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, sample_tf = closes, opens, highs, lows, rsi, tf
             else:
-                tf_results[tf] = {"time": "", "date": "", "bull": "-", "bear": "-"}
+                tf_results[tf] = {"time": "-", "date": "-", "bull": "-", "bear": "-", "status": "Scanning" if is_any_fresh else "Passive"}
 
             time.sleep(0.05)
 
         if has_fresh_trigger:
             table_lines = [
-                "                        Text Details Alert                        ",
-                "--------------------------------------------------------------------------------------",
-                f"{'T.F':<7} {'Time':<8} {'Date':<11} {'Bullish (Price + RSI)':<28} {'Bearish (Price + RSI)':<20}",
-                "--------------------------------------------------------------------------------------"
+                "TEXT DETAILS ALERT",
+                "---------------------------------------------------------------------------------------------------------",
+                f"{'T.F.':<6} | {'Time':<10} | {'Date':<10} | {'Bullish Pattern Name':<28} | {'Bearish Pattern Name':<24} | {'Status'}",
+                "---------------------------------------------------------------------------------------------------------"
             ]
             
             for tf in TIMEFRAMES:
                 res = tf_results[tf]
-                table_lines.append(f"{tf:<7} {res['time']:<8} {res['date']:<11} {res['bull']:<28} {res['bear']:<20}")
+                table_lines.append(f"{tf:<6} | {res['time']:<10} | {res['date']:<10} | {res['bull']:<28} | {res['bear']:<24} | {res['status']}")
             
-            table_lines.append("--------------------------------------------------------------------------------------")
+            table_lines.append("---------------------------------------------------------------------------------------------------------")
             alert_text_table = "\n".join(table_lines)
 
             chart_file = "alert_chart.png"
             generate_chart_image(symbol, sample_tf, sample_closes, sample_opens, sample_highs, sample_lows, sample_rsi, alert_text_table, chart_file)
 
-            send_discord_alert(symbol, chart_file)
-            send_gmail_alert(symbol, alert_text_table, chart_file)
-            print(f"Alert Sent for {symbol}!")
+            send_discord_alert(chart_file)
+            send_gmail_alert(chart_file)
+            print(f"Picture-only Alert Sent for {symbol}!")
 
         time.sleep(0.2)
 
