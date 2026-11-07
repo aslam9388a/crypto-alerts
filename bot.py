@@ -40,7 +40,7 @@ def get_filtered_mexc_futures_symbols():
         permanent_symbols = ["XAU_USDT", "USOIL_USDT", "BTC_USDT"]
         other_symbols = [s["symbol"] for s in symbol_volumes if s["symbol"] not in permanent_symbols]
         
-        # Updated to Top 50 High-Volume Symbols
+        # BTC, XAU, USOIL permanent + Top 50 High-Volume symbols
         top_50_symbols = other_symbols[:50]
 
         final_symbols = list(dict.fromkeys(permanent_symbols + top_50_symbols))
@@ -133,7 +133,7 @@ def detect_shape_patterns(arr, times):
             left_t, head_t, right_t = troughs[-3][1], troughs[-2][1], troughs[-1][1]
             if head_t < left_t and head_t < right_t:
                 p_idx = troughs[-1][0]
-                bullish_pattern = "Inv H&S"
+                bullish_pattern = "Inverse Head & Shoulders"
 
     if peaks:
         if len(peaks) >= 2:
@@ -149,7 +149,7 @@ def detect_shape_patterns(arr, times):
             left_h, head, right_h = peaks[-3][1], peaks[-2][1], peaks[-1][1]
             if head > left_h and head > right_h:
                 p_idx = peaks[-1][0]
-                bearish_pattern = "H&S"
+                bearish_pattern = "Head & Shoulders"
 
     if not bullish_pattern and not bearish_pattern:
         return None, None, ("-", "-"), False
@@ -166,7 +166,8 @@ def detect_shape_patterns(arr, times):
     return bullish_pattern, bearish_pattern, (pattern_time_str, pattern_date_str), is_fresh_signal
 
 def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, alert_table_text, file_path="chart.png"):
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(13, 12), gridspec_kw={'height_ratios': [2, 1]})
+    # Image size thori aur wide kar di hai taake table aur lamba text mukammal saaf aaye
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 12.5), gridspec_kw={'height_ratios': [2, 1]})
     
     x = np.arange(len(closes[-30:]))
     o = opens[-30:]
@@ -196,12 +197,12 @@ def generate_chart_image(symbol, tf, closes, opens, highs, lows, rsi, alert_tabl
     ax2.grid(True, color='#2a2e39', alpha=0.5)
     ax2.legend(loc="upper left", facecolor='#131722', labelcolor='white')
 
-    # Detailed Table Overlay at bottom with separate RSI Shape columns
-    fig.text(0.03, 0.01, alert_table_text, family='monospace', fontsize=7.5, color='white', 
+    # Detailed Table Overlay at bottom with wide columns for full text display
+    fig.text(0.02, 0.01, alert_table_text, family='monospace', fontsize=7.2, color='white', 
              bbox=dict(boxstyle='round,pad=0.5', facecolor='#131722', edgecolor='#2a2e39', linewidth=1.5))
 
     fig.patch.set_facecolor('#131722')
-    plt.tight_layout(rect=[0, 0.25, 1, 1])
+    plt.tight_layout(rect=[0, 0.26, 1, 1])
     plt.savefig(file_path, facecolor=fig.get_facecolor(), edgecolor='none', dpi=150)
     plt.close()
 
@@ -294,16 +295,16 @@ def main():
         if has_fresh_trigger:
             table_lines = [
                 "TEXT DETAILS ALERT",
-                "--------------------------------------------------------------------------------------------------------------------------------------------------------",
-                f"{'T.F.':<6} | {'Time':<10} | {'Date':<10} | {'Bull. RSI Shape':<18} | {'Bullish Pattern Name':<22} | {'Bear. RSI Shape':<18} | {'Bearish Pattern Name':<22} | {'Status'}",
-                "--------------------------------------------------------------------------------------------------------------------------------------------------------"
+                "-------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
+                f"{'T.F.':<6} | {'Time':<10} | {'Date':<10} | {'Bull. RSI Shape':<22} | {'Bullish Pattern Name':<25} | {'Bear. RSI Shape':<22} | {'Bearish Pattern Name':<25} | {'Status'}",
+                "-------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
             ]
             
             for tf in TIMEFRAMES:
                 res = tf_results[tf]
-                table_lines.append(f"{tf:<6} | {res['time']:<10} | {res['date']:<10} | {res['bull_rsi']:<18} | {res['bull_pat']:<22} | {res['bear_rsi']:<18} | {res['bear_pat']:<22} | {res['status']}")
+                table_lines.append(f"{tf:<6} | {res['time']:<10} | {res['date']:<10} | {res['bull_rsi']:<22} | {res['bull_pat']:<25} | {res['bear_rsi']:<22} | {res['bear_pat']:<25} | {res['status']}")
             
-            table_lines.append("--------------------------------------------------------------------------------------------------------------------------------------------------------")
+            table_lines.append("-------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
             alert_text_table = "\n".join(table_lines)
 
             chart_file = "alert_chart.png"
@@ -311,7 +312,7 @@ def main():
 
             send_discord_alert(chart_file)
             send_gmail_alert(chart_file)
-            print(f"Picture-only Alert Sent for {symbol} with Top 50 symbols!")
+            print(f"Picture-only Alert Sent for {symbol} with full column width!")
 
         time.sleep(0.2)
 
